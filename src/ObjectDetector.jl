@@ -126,7 +126,7 @@ mutable struct Yolo
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
 
     # The constructor takes the official YOLO config files and weight files
-    Yolo(cfgfile::String, weightfile::String, batchsize::Int = 1) = begin
+    Yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false) = begin
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
@@ -158,23 +158,23 @@ mutable struct Yolo
                 push!(stack, x -> act.(x))
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
-                prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
+                !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
             elseif blocktype == :upsample
                 stride = block[:stride]
                 push!(fn, x -> upsample(x, stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
-                prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride] # use our custom stride function if size is 1
                 stride == 1 ? push!(fn, x -> maxpools1(x, siz)) : push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride))))
                 push!(ch, ch[end])
-                prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
             elseif blocktype == :route
                 idx1 = block[:layers][1] + length(fn)+1
-                idx2 = length(block[:layers]) > 1 ? block[:layers][2]+1 : ""
+                idx2 = length(block[:layers]) > 1 ? length(fn) + block[:layers][2]+1 : ""
                 if idx2 == ""
                     push!(ch, ch[idx1])
                     push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
@@ -182,18 +182,18 @@ mutable struct Yolo
                     push!(ch, ch[idx1] + ch[idx2])
                     push!(fn, (idx2, :cat)) # cat two layers along the channel dim
                 end
-                prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + length(fn)+1
                 push!(fn, (idx, :add)) # take two layers with equal num of channels and adds their values
                 push!(ch, ch[end])
-                prettyprint(["\n($(length(fn))) ","shortcut($idx,$(length(fn)-1))"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($(length(fn))) ","shortcut($idx,$(length(fn)-1))"," => "],[:blue,:cyan,:green])
             elseif blocktype == :yolo
                 push!(fn, nothing) # not a real layer. used for bounding boxes etc...
                 push!(ch, ch[end])
                 push!(cfg[:output], block)
-                prettyprint(["($(length(fn))) ","YOLO"," || "],[:blue,:yellow,:green])
+                !silent && prettyprint(["($(length(fn))) ","YOLO"," || "],[:blue,:yellow,:green])
             end
         end
 
