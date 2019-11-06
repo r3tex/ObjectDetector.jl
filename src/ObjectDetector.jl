@@ -97,7 +97,8 @@ flip(x) = x[end:-1:1, end:-1:1, :, :]
 function maxpools1(x, kernel = 2)
     x = cat(x, x[:, end:end, :, :], dims = 2)
     x = cat(x, x[end:end, :, :, :], dims = 1)
-    return maxpool(x, (kernel, kernel), stride = 1)
+    pdims = PoolDims(x, (kernel, kernel); stride = 1)
+    return maxpool(x, pdims)
 end
 
 # Optimized upsampling without indexing for better GPU performance
@@ -167,7 +168,7 @@ mutable struct Yolo
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride] # use our custom stride function if size is 1
-                stride == 1 ? push!(fn, x -> maxpools1(x, siz)) : push!(fn, x -> maxpool(x, (siz, siz), stride = (stride, stride)))
+                stride == 1 ? push!(fn, x -> maxpools1(x, siz)) : push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride))))
                 push!(ch, ch[end])
                 prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
