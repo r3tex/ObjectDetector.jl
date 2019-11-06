@@ -8,7 +8,12 @@ THIS IS Robert Luciani's IMPLEMENTATION OF YOLO
 ############################################ =#
 
 using Flux
-in(:CuArrays, names(Main, imported = true)) && (using CuArrays; CuArrays.allowscalar(false))
+const CuLoaded = in(:CuArrays, names(Main, imported = true))
+if CuLoaded
+    using CuArrays
+    CuArrays.allowscalar(false)
+end
+
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -287,8 +292,6 @@ end
 ##### FUNCTIONS FOR INFERENCE ##########################
 ########################################################
 
-include("gpukern.jl")
-
 # Sets all values under a given threshold to zero
 function clipdetect!(input::Array, conf)
    rows, cols = size(input)
@@ -297,17 +300,7 @@ function clipdetect!(input::Array, conf)
    end
 end
 
-function clipdetect!(input::CuArray, conf)
-    rows, cols = size(input)
-    @cuda blocks=cols threads=1024 kern_clipdetect(input, conf)
-end
-
 # findmax, get the class with highest confidence and class number out.
-function findmax!(input::CuArray, idst::Int, idend::Int)
-    rows, cols = size(input)
-    @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
-end
-
 function findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
     for i in 1:size(input, 2)
         input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
@@ -319,15 +312,28 @@ function keepdetections(arr::Array)
     return arr[:, arr[5, :] .> 0]
 end
 
-function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
-    rows, cols = size(input)
-    bools = CuArrays.zeros(Int32, cols)
-    @cuda blocks=cols threads=rows kern_genbools(input, bools)
-    idxs = cumsum(bools)
-    n = count(bools)
-    output = CuArray{Float32, 2}(undef, rows, n)
-    @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
-    return output
+@static if CuLoaded
+    include("gpukern.jl")
+    function clipdetect!(input::CuArray, conf)
+        rows, cols = size(input)
+        @cuda blocks=cols threads=1024 kern_clipdetect(input, conf)
+    end
+
+    function findmax!(input::CuArray, idst::Int, idend::Int)
+        rows, cols = size(input)
+        @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
+    end
+
+    function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
+        rows, cols = size(input)
+        bools = CuArrays.zeros(Int32, cols)
+        @cuda blocks=cols threads=rows kern_genbools(input, bools)
+        idxs = cumsum(bools)
+        n = count(bools)
+        output = CuArray{Float32, 2}(undef, rows, n)
+        @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
+        return output
+    end
 end
 
 # Bounding Box Intersection Over Union - removes overlapping boxes for same object
