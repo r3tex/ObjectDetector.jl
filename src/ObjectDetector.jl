@@ -174,13 +174,18 @@ mutable struct Yolo
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
             elseif blocktype == :route
                 idx1 = block[:layers][1] + length(fn)+1
-                idx2 = length(block[:layers]) > 1 ? length(fn) + block[:layers][2]+1 : ""
-                if idx2 == ""
-                    push!(ch, ch[idx1])
-                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
-                else
+                if length(block[:layers]) > 1
+                    if block[:layers][2] > 0
+                        idx2 = block[:layers][2]+1
+                    else
+                        idx2 = length(ch) + block[:layers][2]+1 # Handle -ve route selections
+                    end
                     push!(ch, ch[idx1] + ch[idx2])
                     push!(fn, (idx2, :cat)) # cat two layers along the channel dim
+                else
+                    idx2 = ""
+                    push!(ch, ch[idx1])
+                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
                 end
                 !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
@@ -233,7 +238,8 @@ mutable struct Yolo
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
         print("\n\n")
-        cfg[:gridsize] = minimum([size(v, 1) for (k,v) in W]) # the gridsize is determined by the smallest matrix
+        matrix_sizes = [size(v, 1) for (k,v) in W]
+        cfg[:gridsize] = minimum(matrix_sizes) # the gridsize is determined by the smallest matrix
         cfg[:layer2out] = layer2out
         push!(out, Dict(:idx => length(W)))
 
@@ -266,8 +272,8 @@ mutable struct Yolo
             # precalculate the anchor shapes to scale up the detection boxes
             anchor = reshape(onegen(w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             for i in 1:length(anchormask)
-                anchor[:, :, 1, i, :] = anchorvals[1, i] * stridew
-                anchor[:, :, 2, i, :] = anchorvals[2, i] * strideh
+                anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
+                anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
             end
 
             out[i][:size] = (w, h, attributes, length(anchormask), b)
@@ -384,8 +390,8 @@ function (yolo::Yolo)(img::DenseArray)
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(w, h, 4, bo, ba), dims = 3)
-        weights[:, :, a+3, outnr, :] = outnr # write output number to attribute a+3
-        for batch in 1:ba weights[:, :, a+4, :, batch] = batch end # write batchnumber to attribute a+4
+        weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
+        for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
         weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
         weights = reshape(weights, a+4, :) # reshape to attr, data
         clipdetect!(weights, Float32(out[:truth])) # set all detections below conf-thresh to zero
