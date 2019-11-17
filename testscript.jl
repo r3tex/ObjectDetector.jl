@@ -21,7 +21,6 @@ for (i, model) in pairs(models[1:end-1])
     cfg_file = joinpath(pkgdir,"data","$(model).cfg")
     weights_file = joinpath(pkgdir,"data","$(model).weights")
     IMG_for_model = prepareimage(IMG,imgsizes[i][1],imgsizes[i][1])
-    @show typeof(IMG_for_model)
     try
         t = @elapsed begin
             yolomod = ObjectDetector.Yolo(cfg_file, weights_file, 1, silent=true)
