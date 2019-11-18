@@ -178,7 +178,7 @@ mutable struct Yolo
                     if block[:layers][2] > 0
                         idx2 = block[:layers][2]+1
                     else
-                        idx2 = length(ch) + block[:layers][2]+1 # Handle -ve route selections
+                        idx2 = length(ch) + block[:layers][2] # Handle -ve route selections
                     end
                     push!(ch, ch[idx1] + ch[idx2])
                     push!(fn, (idx2, :cat)) # cat two layers along the channel dim
