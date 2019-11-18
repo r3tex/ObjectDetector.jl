@@ -256,7 +256,7 @@ mutable struct Yolo
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = reshape(zerogen(w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            offset = reshape(zerogen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
@@ -389,7 +389,7 @@ function (yolo::Yolo)(img::DenseArray)
         weights[:, :, 4, :, :] = weights[:, :, 4, :, :] .+ weights[:, :, 2, :, :]
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
-        weights = cat(weights, zerogen(w, h, 4, bo, ba), dims = 3)
+        weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
         weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
