@@ -5,17 +5,17 @@ using Flux
 
 prepareimage(img, w, h) = gpu(reshape(permutedims(Float32.(channelview(imresize(img, w, h))[1:3,:,:]), [3,2,1]), w, h, 3, 1))
 
-pkgdir = "/Users/ian/Documents/GitHub/ObjectDetector.jl"
+pkgdir = @__DIR__
 include(joinpath(pkgdir,"src","ObjectDetector.jl"))
 
-models = ["yolov2-608", "yolov2-tiny", "yolov3-320", "yolov3-416", "yolov3-608", "yolov3-spp", "yolov3-tiny"]
-imgsizes = [(608,608), (416,416), (320,320), (416,416), (608,608), (608,608), (416,416)]
+models = ["yolov2-tiny", "yolov2-608", "yolov3-tiny", "yolov3-320", "yolov3-416", "yolov3-608", "yolov3-spp", ]
+imgsizes = [(416,416), (608,608), (416,416), (320,320), (416,416), (608,608), (608,608)]
 
 IMG = load(joinpath(pkgdir,"data","dog-cycle-car.png"))
 
 df = DataFrame(model=String[], load=Bool[], load_time=Float64[], run=Bool[], forwardpass_time=Float64[])
 
-for (i, model) in pairs(models[1:end-1])
+for (i, model) in pairs(models)
     new_df = DataFrame(model=model, load=false, load_time=0.0, run=false, forwardpass_time=0.0)
     @info "Testing: $model ====================================================="
     cfg_file = joinpath(pkgdir,"data","$(model).cfg")
@@ -48,6 +48,7 @@ for (i, model) in pairs(models[1:end-1])
         println(msg)
     end
     append!(df,new_df)
+    yolomod = nothing
     GC.gc()
 end
 
