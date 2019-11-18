@@ -204,12 +204,12 @@ mutable struct Yolo
 
         # PART 2 - THE SKIPS
         ####################
-        testimg = gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))
+        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = [] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
-        W = Dict{Int64, typeof(testimg)}() # this holds temporary outputs for use by skip-layers and YOLO output
+        W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -233,10 +233,11 @@ mutable struct Yolo
                 end
             end
             push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(W, i-1 => chainstack[end](testimg).data) # generate a temporary array for the output of the chain
-            testimg = chainstack[end](testimg).data
+            push!(testimgs, chainstack[end](testimgs[end]).data)
+            push!(W, i-1 => testimgs[end]) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
+        testimgs = nothing
         print("\n\n")
         matrix_sizes = [size(v, 1) for (k,v) in W]
         cfg[:gridsize] = minimum(matrix_sizes) # the gridsize is determined by the smallest matrix
