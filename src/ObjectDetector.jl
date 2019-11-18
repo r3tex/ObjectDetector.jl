@@ -105,7 +105,7 @@ end
 function upsample(a, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    b = onegen(stride, 1, stride, 1, 1, 1)
+    b = onegen(Float32, stride, 1, stride, 1, 1, 1)
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -154,7 +154,7 @@ mutable struct Yolo
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
                 push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(BatchNorm(identity, Flux.param(bb), Flux.param(bw), bm, bv, 1e-5, 0.1, false)))
+                bn && push!(stack, gpu(BatchNorm(identity, Flux.param(bb), Flux.param(bw), bm, bv, 1f-5, 0.1f0, false)))
                 push!(stack, x -> act.(x))
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
@@ -263,14 +263,14 @@ mutable struct Yolo
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = reshape(onegen(w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            scale = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = reshape(onegen(w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            anchor = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
