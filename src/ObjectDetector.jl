@@ -376,7 +376,7 @@ function (yolo::Yolo)(img::DenseArray)
     #############################
     outweights = []
     outnr = 0
-    for out in yolo.out
+    @views for out in yolo.out
         outnr += 1
         w, h, a, bo, ba = out[:size]
         weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
