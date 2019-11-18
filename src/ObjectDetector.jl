@@ -211,9 +211,9 @@ mutable struct Yolo
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
-        println("\n\nGenerating chains and outputs: ")
+        !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
-            print("$(i-1) ")
+            !silent && print("$(i-1) ")
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
             if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
@@ -238,7 +238,7 @@ mutable struct Yolo
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
         testimgs = nothing
-        print("\n\n")
+        !silent && print("\n\n")
         matrix_sizes = [size(v, 1) for (k,v) in W]
         cfg[:gridsize] = minimum(matrix_sizes) # the gridsize is determined by the smallest matrix
         cfg[:layer2out] = layer2out
