@@ -13,18 +13,22 @@ n = 3 #select model
 cfg_file = joinpath(pkgdir,"data","$(models[n]).cfg")
 weights_file = joinpath(pkgdir,"data","$(models[n]).weights")
 
-@time yolomod = ObjectDetector.Yolo(cfg_file, weights_file, 1, silent=false)
+@time yolo = ObjectDetector.Yolo(cfg_file, weights_file, 1, silent=false)
 
 IMG = load(joinpath(pkgdir,"data","dog-cycle-car.png"))
 IMG_for_model = prepareimage(IMG,imgsizes[n][1],imgsizes[n][1])
 
-yolomod(IMG_for_model)
-@time yolomod(IMG_for_model)
+
+yolo(IMG_for_model)
+
+using BenchmarkTools
+@btime yolo(IMG_for_model)
 
 using Profile
 Profile.init(n = 10^7, delay = 0.001)
 
-@profiler yolomod(IMG_for_model)
+# Visualize using Juno's built-in flame graph
+@profiler yolo(IMG_for_model)
 
 
 # using Profile
