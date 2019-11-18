@@ -234,7 +234,7 @@ mutable struct Yolo
             end
             push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
             push!(testimgs, chainstack[end](testimgs[end]).data)
-            push!(W, i-1 => testimgs[end]) # generate a temporary array for the output of the chain
+            push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
         testimgs = nothing
@@ -246,7 +246,7 @@ mutable struct Yolo
 
         # PART 3 - THE OUTPUTS
         ######################
-        for i in eachindex(out)
+        @views for i in eachindex(out)
             # we pre-process some linear matrix transformations and store the values for each YOLO output
             w, h, f, b = size(W[out[i][:idx]]) # width, height, filters, batchsize
             strideh = cfg[:height] ÷ h # stride height for this particular output
@@ -258,14 +258,14 @@ mutable struct Yolo
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
             offset = reshape(zerogen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            for i in 0:w-1, j in 0:h-1
+            @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
             scale = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            for i in 0:w-1, j in 0:h-1
+            @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
             end
@@ -404,7 +404,7 @@ function (yolo::Yolo)(img::DenseArray)
     ############################
 
     batchout = cpu(keepdetections(cat(outweights..., dims=2)))
-    size(batchout, 1) == 0 && return genzeros(1, 1)
+    size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
     classes = unique(batchout[end-1, :])
     output = Array{Array{Float32, 2},1}(undef, 0)
