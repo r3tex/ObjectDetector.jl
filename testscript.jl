@@ -1,7 +1,7 @@
-#using CuArrays
+using CuArrays
+using Flux
 using FileIO, ImageCore, ImageTransformations
 using DataFrames
-using Flux
 using BenchmarkTools
 
 prepareimage(img, w, h) = gpu(reshape(permutedims(Float32.(channelview(imresize(img, w, h))[1:3,:,:]), [3,2,1]), h, w, 3, 1))

@@ -154,7 +154,7 @@ mutable struct Yolo
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
                 push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(BatchNorm(identity, Flux.param(bb), Flux.param(bw), bm, bv, 1f-5, 0.1f0, false)))
+                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0)))
                 push!(stack, x -> act.(x))
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
@@ -233,7 +233,7 @@ mutable struct Yolo
                 end
             end
             push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(testimgs, chainstack[end](testimgs[end]).data)
+            push!(testimgs, chainstack[end](testimgs[end]))
             push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
@@ -369,7 +369,7 @@ function (yolo::Yolo)(img::DenseArray)
     # FORWARD PASS
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        yolo.W[i] = yolo.chain[i](yolo.W[i-1]).data
+        yolo.W[i] = yolo.chain[i](yolo.W[i-1])
     end
 
     # PROCESSING EACH YOLO OUTPUT
