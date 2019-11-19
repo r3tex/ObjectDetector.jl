@@ -10,7 +10,7 @@ THIS IS Robert Luciani's IMPLEMENTATION OF YOLO
 using Flux
 const CuLoaded = in(:CuArrays, names(Main, imported = true))
 if CuLoaded
-    using CuArrays
+    using CUDAnative, CuArrays
     CuArrays.allowscalar(false)
 end
 
