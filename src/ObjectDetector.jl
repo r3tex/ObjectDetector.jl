@@ -1,6 +1,6 @@
 module ObjectDetector
 export YOLO
-export resizePadImage, resizekern, sizethatfits, emptybatch
+export resizePadImage, resizekern, sizethatfits, emptybatch, drawBoxes
 
 import Flux.gpu
 export gpu
@@ -14,12 +14,12 @@ using ImageCore
 
 using BenchmarkTools
 using PrettyTables
+using ImageDraw
 
 abstract type Model end
 function getModelInputSize end
 
 include("prepareimage.jl")
-const models_dir = joinpath(dirname(@__DIR__), "models")
 
 ## YOLO models
 include(joinpath(@__DIR__,"yolo","yolo.jl"))

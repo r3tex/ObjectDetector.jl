@@ -4,6 +4,7 @@ Object detection via YOLO in Julia.
 
 YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
 
+<img align="right" src="v3_416_COCO_dog-bicycle-car.jpg">
 
 | **Platform**                                                               | **Build Status**                                                                                |
 |:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
@@ -22,22 +23,29 @@ pkg> add ObjectDetector
 ```
 
 
-## Example Usage (WIP)
+## Example Usage
 
 ### Loading and running on an image
 ```julia
-using ObjectDetector
+using ObjectDetector, FileIO
 
 mod = YOLO.v3_tiny_416_COCO()
 
 batch = emptybatch(mod) # Create a batch object. Automatically uses the GPU if available
 
-img = load(joinpath(dirname(dirname(pathof(YOLO))),"test","images","dog-cycle-car.png"))
+img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))
 
 batch[:,:,:,1] .= gpu(resizePadImage(img, mod)) # Send resized image to the batch
 
 res = mod(batch) # Run the model on the length-1 batch
 ```
+
+### Visualzing the result
+```julia
+imgBoxes = drawBoxes(img, res)
+save(joinpath(@__DIR__,"img.png"), imgBoxes)
+```
+
 
 ## Pretrained Models
 Most of the darknet models that are pretrained on the COCO dataset are available:
@@ -72,34 +80,34 @@ The weights are stored as lazily-loaded julia artifacts.
 Pretrained models can be easily tested with `ObjectDetector.benchmark()`.
 
 Note that the benchmark was run once before the examples here. Initial load time
-of the first model loaded will be ~20 seconds
+of the first model loaded is typically between 3-20 seconds.
 
 A desktop with a GTX 2060:
 ```
 julia> ObjectDetector.benchmark()
 
-┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┬──────────────────┐
-│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │ objects detected │
-├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┼──────────────────┤
-│ v2_tiny_416_COCO │    true │         0.166 │ true │       0.0037 │          272.6 │                1 │
-│ v3_tiny_416_COCO │    true │         0.262 │ true │       0.0041 │          241.7 │                1 │
-│      v3_320_COCO │    true │         1.298 │ true │         0.02 │           50.0 │                2 │
-│      v3_416_COCO │    true │         1.605 │ true │       0.0296 │           33.8 │                3 │
-│      v3_608_COCO │    true │         2.219 │ true │       0.0618 │           16.2 │                2 │
-└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┴──────────────────┘
+┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
+│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
+├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
+│ v2_tiny_416_COCO │    true │          0.16 │ true │       0.0037 │          266.7 │
+│ v3_tiny_416_COCO │    true │         0.243 │ true │       0.0042 │          236.4 │
+│      v3_320_COCO │    true │         1.264 │ true │       0.0209 │           47.8 │
+│      v3_416_COCO │    true │         1.456 │ true │        0.031 │           32.3 │
+│      v3_608_COCO │    true │         2.423 │ true │       0.0686 │           14.6 │
+└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
 ```
 
 A 2019 Macbook Pro (CPU-only, no CUDA)
 ```
-┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┬──────────────────┐
-│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │ objects detected │
-├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┼──────────────────┤
-│ v2_tiny_416_COCO │    true │         0.307 │ true │       0.1537 │            6.5 │                1 │
-│ v3_tiny_416_COCO │    true │         0.318 │ true │       0.2088 │            4.8 │                1 │
-│      v3_320_COCO │    true │         2.064 │ true │       1.5278 │            0.7 │                1 │
-│      v3_416_COCO │    true │         4.221 │ true │       2.7166 │            0.4 │                1 │
-│      v3_608_COCO │    true │         8.334 │ true │       4.2348 │            0.2 │                1 │
-└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┴──────────────────┘
+┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
+│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
+├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
+│ v2_tiny_416_COCO │    true │         0.305 │ true │       0.1383 │            7.2 │
+│ v3_tiny_416_COCO │    true │         0.267 │ true │       0.1711 │            5.8 │
+│      v3_320_COCO │    true │         1.617 │ true │       0.8335 │            1.2 │
+│      v3_416_COCO │    true │         2.377 │ true │       1.4138 │            0.7 │
+│      v3_608_COCO │    true │         4.239 │ true │       3.1122 │            0.3 │
+└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
 ```
 
 
