@@ -6,4 +6,3 @@
 /deps/*
 !/deps/build.jl
 *.weights
-Manifest.toml
