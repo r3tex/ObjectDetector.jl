@@ -30,7 +30,7 @@ using ObjectDetector
 
 mod = YOLO.v3_tiny_416_COCO()
 
-batch = YOLO.emptybatch(mod) # Create a batch object. Automatically uses the GPU if available
+batch = emptybatch(mod) # Create a batch object. Automatically uses the GPU if available
 
 img = load(joinpath(dirname(dirname(pathof(YOLO))),"test","images","dog-cycle-car.png"))
 
