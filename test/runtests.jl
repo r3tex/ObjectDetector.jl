@@ -8,7 +8,7 @@ pretrained_list = [
                     YOLO.v3_tiny_416_COCO,
                     YOLO.v3_320_COCO,
                     YOLO.v3_416_COCO,
-                    # YOLO.v3_608_COCO,
+                    YOLO.v3_608_COCO,
                     # YOLO.v3_608_spp_COCO
                     ]
 
