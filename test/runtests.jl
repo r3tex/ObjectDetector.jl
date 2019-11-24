@@ -39,7 +39,7 @@ for (i, pretrained) in pairs(pretrained_list)
         table[i, 6] = size(res, 2)
 
         imgBoxes = drawBoxes(IMG, res)
-        save(joinpath(@__DIR__,"results","$(modelname)_dog-cycle-car.png"), imgBoxes)
+        save(joinpath(@__DIR__,"results","$(modelname)_dog-cycle-car.jpg"), imgBoxes)
 
         @test size(res,2) > 0
 
