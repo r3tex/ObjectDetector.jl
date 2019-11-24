@@ -24,7 +24,7 @@ pkg> add ObjectDetector
 
 ## Usage
 
-![prettyprint example](prettyprint.png)
+![prettyprint example](examples/prettyprint.png)
 
 ### Loading and running on an image
 ```julia
@@ -44,8 +44,9 @@ res = yolomod(batch) # Run the model on the length-1 batch
 ### Visualzing the result
 ```julia
 imgBoxes = drawBoxes(img, res)
-save(joinpath(@__DIR__,"img.png"), imgBoxes)
+save(joinpath(@__DIR__,"result.png"), imgBoxes)
 ```
+![dog-cycle-car with boxes](examples/result.png)
 
 
 ## Pretrained Models
