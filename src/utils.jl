@@ -64,12 +64,12 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
     IMG = rand(RGB,416,416)
 
-    header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "run time (fps)" "objects detected"]
-    table = Array{Any}(undef, length(pretrained_list), 7)
+    header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "run time (fps)"]
+    table = Array{Any}(undef, length(pretrained_list), 6)
     for (i, pretrained) in pairs(pretrained_list)
         modelname = string(pretrained)
         @info "Loading and running $modelname"
-        table[i,:] = [modelname false "-" "-" "-" "-" "-"]
+        table[i,:] = [modelname false "-" "-" "-" "-"]
 
         t_load = @elapsed begin
             mod = pretrained(silent=true)
@@ -85,7 +85,6 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
         table[i, 4] = true
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = round(1/t_run, digits=1)
-        table[i, 7] = size(res,2)
 
         mod = nothing
         batch = nothing
