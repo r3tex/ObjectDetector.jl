@@ -1,8 +1,9 @@
 module YOLO
 export getModelInputSize
 
-import ..Model, ..models_dir, ..getArtifact, ..getModelInputSize
+import ..Model, ..getArtifact, ..getModelInputSize
 
+const models_dir = joinpath(@__DIR__, "models")
 
 using Flux
 import Flux.gpu
@@ -338,7 +339,7 @@ mutable struct yolo <: Model
             out[i][:scale] = scale
             out[i][:anchor] = anchor
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
-            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.0) # for ignoring detections of same object (overlapping)
+            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 1.0) # for ignoring detections of same object (overlapping)
         end
 
         return new(cfg, chainstack, W, out)
@@ -459,7 +460,7 @@ Bounding Box Intersection Over Union - removes overlapping boxes for same object
 """
 function bboxiou(box1, box2)
     b1x1, b1y1, b1x2, b1y2 = box1
-    b2x1, b2y1, b2x2, b2y2 = box2[1, :], box2[2, :], box2[3, :], box2[4, :]
+    b2x1, b2y1, b2x2, b2y2 = view(box2, 1, :), view(box2, 2, :), view(box2, 3, :), view(box2, 4, :)
     rectx1 = max.(b1x1, b2x1)
     recty1 = max.(b1y1, b2y1)
     rectx2 = min.(b1x2, b2x2)
@@ -479,12 +480,12 @@ Simply pass a batch of images to the yolo object to do inference.
 """
 function (yolo::yolo)(img::DenseArray)
     @assert ndims(img) == 4 # width, height, channels, batchsize
-    yolo.W[0] = gpu(img)
+    yolo.W[0] = img
 
     # FORWARD PASS
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        yolo.W[i] = yolo.chain[i](yolo.W[i-1])
+        yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
     end
 
     # PROCESSING EACH YOLO OUTPUT
@@ -503,6 +504,12 @@ function (yolo::yolo)(img::DenseArray)
         weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5
         weights[:, :, 3, :, :] = weights[:, :, 3, :, :] .+ weights[:, :, 1, :, :]
         weights[:, :, 4, :, :] = weights[:, :, 4, :, :] .+ weights[:, :, 2, :, :]
+
+        # Conver to image width & height scale
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1)
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2)
+        weights[:, :, 3, :, :] = weights[:, :, 3, :, :] ./ size(img, 1)
+        weights[:, :, 4, :, :] = weights[:, :, 4, :, :] ./ size(img, 2)
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
@@ -526,10 +533,10 @@ function (yolo::yolo)(img::DenseArray)
     for c in classes
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
-            iou = bboxiou(detection[1:4, l], detection[1:4, l+1:end])
+            iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
             ds = findall(v -> v > yolo.out[1][:ignore], iou)
             detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
-            l >= size(detection, 2) && break
+            l >= size(detection,2) && break
         end
         push!(output, detection)
     end

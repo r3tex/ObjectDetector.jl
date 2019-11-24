@@ -7,7 +7,7 @@ pretrained_list = [
                     # YOLO.v2_608_COCO,
                     YOLO.v3_tiny_416_COCO,
                     YOLO.v3_320_COCO,
-                    # YOLO.v3_416_COCO,
+                    YOLO.v3_416_COCO,
                     # YOLO.v3_608_COCO,
                     # YOLO.v3_608_spp_COCO
                     ]
@@ -37,6 +37,9 @@ for (i, pretrained) in pairs(pretrained_list)
         table[i, 4] = true
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = size(res, 2)
+
+        imgBoxes = drawBoxes(IMG, res)
+        save(joinpath(@__DIR__,"results","$(modelname)_dog-cycle-car.png"), imgBoxes)
 
         @test size(res,2) > 0
 

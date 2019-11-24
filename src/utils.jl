@@ -23,6 +23,30 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 """
+    drawBoxes(img::Array, results)
+
+Draw boxes on image for each BBOX result.
+"""
+function drawBoxes(img::Array, results)
+    w = size(img,1)
+    h = size(img,2)
+    imgCopy = copy(img)
+    size(results) == (0,) && return imgCopy
+    for i in 1:size(results,2)
+        bbox = results[1:4,i]
+        class = results[end-1,i]
+        conf = results[end-2,i]
+        p = Point(round(Int, bbox[1]*w), round(Int, bbox[2]*h))
+        q = Point(round(Int, bbox[1]*w), round(Int, bbox[4]*h))
+        r = Point(round(Int, bbox[3]*w), round(Int, bbox[2]*h))
+        s = Point(round(Int, bbox[3]*w), round(Int, bbox[4]*h))
+        draw!(imgCopy, Polygon([p,q,s,r]), zero(eltype(imgCopy)))
+    end
+    return imgCopy
+end
+
+
+"""
     benchmark(;select = [1,3,4,5,6], reverseAfter:Bool=false)
 
 Convenient benchmarking

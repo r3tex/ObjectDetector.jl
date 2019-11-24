@@ -4,6 +4,7 @@ Object detection via YOLO in Julia.
 
 YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
 
+<img align="right" src="v3_416_COCO_dog-bicycle-car.jpg">
 
 | **Platform**                                                               | **Build Status**                                                                                |
 |:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
@@ -22,22 +23,29 @@ pkg> add ObjectDetector
 ```
 
 
-## Example Usage (WIP)
+## Example Usage
 
 ### Loading and running on an image
 ```julia
-using ObjectDetector
+using ObjectDetector, FileIO
 
 mod = YOLO.v3_tiny_416_COCO()
 
 batch = emptybatch(mod) # Create a batch object. Automatically uses the GPU if available
 
-img = load(joinpath(dirname(dirname(pathof(YOLO))),"test","images","dog-cycle-car.png"))
+img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))
 
 batch[:,:,:,1] .= gpu(resizePadImage(img, mod)) # Send resized image to the batch
 
 res = mod(batch) # Run the model on the length-1 batch
 ```
+
+### Visualzing the result
+```julia
+imgBoxes = drawBoxes(img, res)
+save(joinpath(@__DIR__,"img.png"), imgBoxes)
+```
+
 
 ## Pretrained Models
 Most of the darknet models that are pretrained on the COCO dataset are available:
