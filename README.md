@@ -28,15 +28,15 @@ pkg> add ObjectDetector
 ```julia
 using ObjectDetector, FileIO
 
-mod = YOLO.v3_tiny_416_COCO()
+yolomod = YOLO.v3_tiny_416_COCO()
 
-batch = emptybatch(mod) # Create a batch object. Automatically uses the GPU if available
+batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU if available
 
 img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))
 
-batch[:,:,:,1] .= gpu(resizePadImage(img, mod)) # Send resized image to the batch
+batch[:,:,:,1] .= gpu(resizePadImage(img, yolomod)) # Send resized image to the batch
 
-res = mod(batch) # Run the model on the length-1 batch
+res = yolomod(batch) # Run the model on the length-1 batch
 ```
 
 ### Visualzing the result
