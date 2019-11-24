@@ -13,7 +13,7 @@ Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet
 Requires julia v1.3+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
 
 ```
-pkg> add ObjectDetector
+pkg> add https://github.com/r3tex/ObjectDetector.jl
 ```
 
 ## Usage
