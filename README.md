@@ -60,16 +60,15 @@ YOLO.v3_608_spp_COCO()
 
 Or custom models can be loaded with:
 ```julia
-YOLO.yolo("path/to/model.cfg", "path/to/weights.weights", 1)
+YOLO.yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch size.
 ```
-where `1` is the batch size.
 
 For instance the pretrained models are defined as:
 ```julia
 v2_608_COCO(;batch=1, silent=false) = yolo(joinpath(models_dir,"yolov2-608.cfg"), getArtifact("yolov2-COCO"), batch, silent=silent)
 ```
 
-The weights are stored as lazily-loaded julia artifacts.
+The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3)
 
 ## Benchmarking
 
