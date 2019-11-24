@@ -1,8 +1,6 @@
 # ObjectDetector.jl
 
-Object detection via YOLO in Julia.
-
-YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
+Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
 
 
 | **Platform**                                                               | **Build Status**                                                                                |
@@ -12,15 +10,11 @@ YOLO models are loaded directly from Darknet .cfg and .weights files as Flux mod
 
 ## Installation
 
-Requires julia v1.3+
-
-The package can be installed with the Julia package manager.
-From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
+Requires julia v1.3+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
 
 ```
 pkg> add ObjectDetector
 ```
-
 
 ## Usage
 
@@ -115,13 +109,13 @@ A 2019 Macbook Pro (CPU-only, no CUDA)
 
 [discourse-tag-url]: https://discourse.julialang.org/tags/yolo
 
-[travis-img]: https://travis-ci.com/ianshmean/ObjectDetector.jl.svg?branch=master
-[travis-url]: https://travis-ci.com/ianshmean/ObjectDetector.jl
+[travis-img]: https://travis-ci.com/r3tex/ObjectDetector.jl.svg?branch=master
+[travis-url]: https://travis-ci.com/r3tex/ObjectDetector.jl
 
-[codecov-img]: https://codecov.io/gh/ianshmean/ObjectDetector.jl/branch/master/graph/badge.svg
-[codecov-url]: https://codecov.io/gh/ianshmean/ObjectDetector.jl
+[codecov-img]: https://codecov.io/gh/r3tex/ObjectDetector.jl/branch/master/graph/badge.svg
+[codecov-url]: https://codecov.io/gh/r3tex/ObjectDetector.jl
 
-[coveralls-img]: https://coveralls.io/repos/github/ianshmean/ObjectDetector.jl/badge.svg?branch=master
-[coveralls-url]: https://coveralls.io/github/ianshmean/ObjectDetector.jl?branch=master
+[coveralls-img]: https://coveralls.io/repos/github/r3tex/ObjectDetector.jl/badge.svg?branch=master
+[coveralls-url]: https://coveralls.io/github/r3tex/ObjectDetector.jl?branch=master
 
-[issues-url]: https://github.com/ianshmean/ObjectDetector.jl/issues
+[issues-url]: https://github.com/r3tex/ObjectDetector.jl/issues
