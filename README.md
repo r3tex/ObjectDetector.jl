@@ -28,7 +28,7 @@ pkg> add ObjectDetector
 ```julia
 using ObjectDetector, FileIO
 
-yolomod = YOLO.v3_tiny_416_COCO()
+yolomod = YOLO.v3_tiny_416_COCO(batch=1) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
 
 batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU if available
 
