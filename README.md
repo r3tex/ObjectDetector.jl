@@ -4,7 +4,6 @@ Object detection via YOLO in Julia.
 
 YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
 
-<img align="right" src="v3_416_COCO_dog-bicycle-car.jpg">
 
 | **Platform**                                                               | **Build Status**                                                                                |
 |:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
