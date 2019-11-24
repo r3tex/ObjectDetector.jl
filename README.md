@@ -24,11 +24,51 @@ pkg> add ObjectDetector
 
 ## Example Usage
 
+```julia
+julia> using ObjectDetector
+julia> yolomod = YOLO.v3_416_COCO()
+(1) conv(3,3->32) => (2) conv(3,32->64) => (3) conv(1,64->32) => (4) conv(3,32->64) =>
+(5) shortcut(2,4) => (6) conv(3,64->128) => (7) conv(1,128->64) => (8) conv(3,64->128) =>
+(9) shortcut(6,8) => (10) conv(1,128->64) => (11) conv(3,64->128) =>
+(12) shortcut(9,11) => (13) conv(3,128->256) => (14) conv(1,256->128) => (15) conv(3,128->256) =>
+(16) shortcut(13,15) => (17) conv(1,256->128) => (18) conv(3,128->256) =>
+(19) shortcut(16,18) => (20) conv(1,256->128) => (21) conv(3,128->256) =>
+(22) shortcut(19,21) => (23) conv(1,256->128) => (24) conv(3,128->256) =>
+(25) shortcut(22,24) => (26) conv(1,256->128) => (27) conv(3,128->256) =>
+(28) shortcut(25,27) => (29) conv(1,256->128) => (30) conv(3,128->256) =>
+(31) shortcut(28,30) => (32) conv(1,256->128) => (33) conv(3,128->256) =>
+(34) shortcut(31,33) => (35) conv(1,256->128) => (36) conv(3,128->256) =>
+(37) shortcut(34,36) => (38) conv(3,256->512) => (39) conv(1,512->256) => (40) conv(3,256->512) =>
+(41) shortcut(38,40) => (42) conv(1,512->256) => (43) conv(3,256->512) =>
+(44) shortcut(41,43) => (45) conv(1,512->256) => (46) conv(3,256->512) =>
+(47) shortcut(44,46) => (48) conv(1,512->256) => (49) conv(3,256->512) =>
+(50) shortcut(47,49) => (51) conv(1,512->256) => (52) conv(3,256->512) =>
+(53) shortcut(50,52) => (54) conv(1,512->256) => (55) conv(3,256->512) =>
+(56) shortcut(53,55) => (57) conv(1,512->256) => (58) conv(3,256->512) =>
+(59) shortcut(56,58) => (60) conv(1,512->256) => (61) conv(3,256->512) =>
+(62) shortcut(59,61) => (63) conv(3,512->1024) => (64) conv(1,1024->512) => (65) conv(3,512->1024) =>
+(66) shortcut(63,65) => (67) conv(1,1024->512) => (68) conv(3,512->1024) =>
+(69) shortcut(66,68) => (70) conv(1,1024->512) => (71) conv(3,512->1024) =>
+(72) shortcut(69,71) => (73) conv(1,1024->512) => (74) conv(3,512->1024) =>
+(75) shortcut(72,74) => (76) conv(1,1024->512) => (77) conv(3,512->1024) => (78) conv(1,1024->512) => (79) conv(3,512->1024) => (80) conv(1,1024->512) => (81) conv(3,512->1024) => (82) conv(1,1024->255) => (83) YOLO ||
+(84) route(80,) => (85) conv(1,512->256) => (86) upsample(2) =>
+(87) route(86,62) => (88) conv(1,768->256) => (89) conv(3,256->512) => (90) conv(1,512->256) => (91) conv(3,256->512) => (92) conv(1,512->256) => (93) conv(3,256->512) => (94) conv(1,512->255) => (95) YOLO ||
+(96) route(92,) => (97) conv(1,256->128) => (98) upsample(2) =>
+(99) route(98,37) => (100) conv(1,384->128) => (101) conv(3,128->256) => (102) conv(1,256->128) => (103) conv(3,128->256) => (104) conv(1,256->128) => (105) conv(3,128->256) => (106) conv(1,256->255) => (107) YOLO ||
+
+Generating chains and outputs:
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+DarkNet 0.2.0
+WxH: 416x416   channels: 3   batchsize: 1
+gridsize: 13   classes: 80   thresholds: Detect 0.6. Overlap 0.4
+```
+
 ### Loading and running on an image
 ```julia
 using ObjectDetector, FileIO
 
-yolomod = YOLO.v3_tiny_416_COCO(batch=1) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
+yolomod = YOLO.v3_tiny_416_COCO(batch=1, silent=true) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
 
 batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU if available
 
