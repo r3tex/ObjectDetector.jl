@@ -227,21 +227,17 @@ mutable struct yolo <: Model
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
             elseif blocktype == :route
-                idx1 = length(fn) + block[:layers][1] + 1
-                if length(block[:layers]) > 1
-                    if block[:layers][2] > 0
-                        idx2 = block[:layers][2] + 1
-                    else
-                        idx2 = length(fn) + block[:layers][2] + 1 # Handle -ve route selections
-                    end
-                    push!(ch, ch[idx1] + ch[idx2])
-                    push!(fn, (idx2, :cat)) # cat two layers along the channel dim
+                idxs = map(x-> x>0 ? x + 1 : length(fn) + x + 1, block[:layers])
+                if length(idxs) == 1
+                    push!(ch, ch[idxs[1]])
+                    @show idxs[1]
+                    push!(fn, (idxs[1], :route)) # pull a whole layer from a few steps back
                 else
-                    idx2 = ""
-                    push!(ch, ch[idx1])
-                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
+                    push!(ch, +(ch[idxs]...))
+                    @show idxs[2:end]
+                    push!(fn, (idxs[2:end], :cat)) # cat multiple layers along the channel dim
                 end
-                !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($(length(fn))) ","route($idxs)"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + length(fn)+1
@@ -265,7 +261,9 @@ mutable struct yolo <: Model
         ####################
         testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
+        needout = vcat(0, [first(l[1]) for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1)
+        @show needout
+        sort!(needout)
         chainstack = [] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
@@ -273,7 +271,7 @@ mutable struct yolo <: Model
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
             !silent && print("$(i-1) ")
-            fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
+            @show fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
             if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
@@ -287,13 +285,14 @@ mutable struct yolo <: Model
                     elseif fn[j][2] == :add
                         fn[j] = x -> x + W[arrayidx]
                     elseif fn[j][2] == :cat
-                        fn[j] = x -> cat(x, W[arrayidx], dims = 3)
+                        fn[j] = x -> cat(x, W[arrayidx]..., dims = 3)
                     end
                 end
             end
             push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
             push!(testimgs, chainstack[end](testimgs[end]))
             push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
+            @show [l => i-1 for l in fst:lst]
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
         testimgs = nothing
