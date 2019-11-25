@@ -345,7 +345,7 @@ mutable struct yolo <: Model
             out[i][:scale] = scale
             out[i][:anchor] = anchor
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
-            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 1.0) # for ignoring detections of same object (overlapping)
+            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
         return new(cfg, chainstack, W, out)
@@ -506,16 +506,24 @@ function (yolo::yolo)(img::DenseArray)
         weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
         weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
         weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- weights[:, :, 3, :, :] .* 0.5
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5
-        weights[:, :, 3, :, :] = weights[:, :, 3, :, :] .+ weights[:, :, 1, :, :]
-        weights[:, :, 4, :, :] = weights[:, :, 4, :, :] .+ weights[:, :, 2, :, :]
 
-        # Conver to image width & height scale
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1)
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2)
-        weights[:, :, 3, :, :] = weights[:, :, 3, :, :] ./ size(img, 1)
-        weights[:, :, 4, :, :] = weights[:, :, 4, :, :] ./ size(img, 2)
+        cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
+
+        # Convert to image width & height scale (0.0-1.0)
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+        if yolo.cfg[:yoloversion] == 2
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+        else
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+        end
+
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- weights[:, :, 3, :, :] .* 0.5 #x1
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5 #y1
+        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
