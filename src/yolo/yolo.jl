@@ -161,12 +161,15 @@ mutable struct yolo <: Model
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
+
         cfg = cfgvec[1][2]
+        yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
+        cfg[:yoloversion] = yoloversion
         weightbytes = IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
         maj, min, subv, im1, im2 = reinterpret(Int32, read(weightbytes, 4*5))
-        cfg[:version] = VersionNumber("$maj.$min.$subv")
+        cfg[:darknetversion] = VersionNumber("$maj.$min.$subv")
         cfg[:batchsize] = batchsize
         cfg[:output] = []
 
@@ -339,7 +342,7 @@ getModelInputSize(model::yolo) = (model.cfg[:width], model.cfg[:height], model.c
 function Base.show(io::IO, yolo::yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
-    ln1 = "DarkNet $(yolo.cfg[:version])\n"
+    ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
     ln3 = "gridsize: $(yolo.cfg[:gridsize])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
