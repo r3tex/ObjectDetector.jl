@@ -118,7 +118,6 @@ flip(x) = x[end:-1:1, end:-1:1, :, :]
 
 """
     maxpools1(x, kernel = 2)
-
 We need a max-pool with a fixed stride of 1
 """
 function maxpools1(x, kernel = 2)
@@ -173,12 +172,15 @@ mutable struct yolo <: Model
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
+
         cfg = cfgvec[1][2]
+        yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
+        cfg[:yoloversion] = yoloversion
         weightbytes = IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
         maj, min, subv, im1, im2 = reinterpret(Int32, read(weightbytes, 4*5))
-        cfg[:version] = VersionNumber("$maj.$min.$subv")
+        cfg[:darknetversion] = VersionNumber("$maj.$min.$subv")
         cfg[:batchsize] = batchsize
         cfg[:output] = []
 
@@ -215,8 +217,12 @@ mutable struct yolo <: Model
                 !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
                 siz = block[:size]
-                stride = block[:stride] # use our custom stride function if size is 1
-                stride == 1 ? push!(fn, x -> maxpools1(x, siz)) : push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride))))
+                stride = block[:stride]
+                if stride==1 && CuFunctional
+                    push!(fn, x -> maxpools1(x, siz)) #Asymmetric padding not supported by CuDNN
+                else
+                    push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))))
+                end
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
@@ -339,7 +345,7 @@ mutable struct yolo <: Model
             out[i][:scale] = scale
             out[i][:anchor] = anchor
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
-            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 1.0) # for ignoring detections of same object (overlapping)
+            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
         return new(cfg, chainstack, W, out)
@@ -351,7 +357,7 @@ getModelInputSize(model::yolo) = (model.cfg[:width], model.cfg[:height], model.c
 function Base.show(io::IO, yolo::yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
-    ln1 = "DarkNet $(yolo.cfg[:version])\n"
+    ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
     ln3 = "gridsize: $(yolo.cfg[:gridsize])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
@@ -500,16 +506,24 @@ function (yolo::yolo)(img::DenseArray)
         weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
         weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
         weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- weights[:, :, 3, :, :] .* 0.5
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5
-        weights[:, :, 3, :, :] = weights[:, :, 3, :, :] .+ weights[:, :, 1, :, :]
-        weights[:, :, 4, :, :] = weights[:, :, 4, :, :] .+ weights[:, :, 2, :, :]
 
-        # Conver to image width & height scale
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1)
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2)
-        weights[:, :, 3, :, :] = weights[:, :, 3, :, :] ./ size(img, 1)
-        weights[:, :, 4, :, :] = weights[:, :, 4, :, :] ./ size(img, 2)
+        cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
+
+        # Convert to image width & height scale (0.0-1.0)
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+        if yolo.cfg[:yoloversion] == 2
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+        else
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+        end
+
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- weights[:, :, 3, :, :] .* 0.5 #x1
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5 #y1
+        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)

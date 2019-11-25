@@ -9,10 +9,13 @@ pretrained_list = [
                     YOLO.v3_320_COCO,
                     YOLO.v3_416_COCO,
                     YOLO.v3_608_COCO,
-                    # YOLO.v3_608_spp_COCO
+                    # YOLO.v3_spp_608_COCO
                     ]
 
 IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+
+resultsdir = joinpath(@__DIR__,"results")
+!isdir(resultsdir) && mkdir(resultsdir)
 
 header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "objects detected"]
 table = Array{Any}(undef, length(pretrained_list), 6)
@@ -39,7 +42,9 @@ for (i, pretrained) in pairs(pretrained_list)
         table[i, 6] = size(res, 2)
 
         imgBoxes = drawBoxes(IMG, res)
-        save(joinpath(@__DIR__,"results","$(modelname)_dog-cycle-car.jpg"), imgBoxes)
+        resfile = joinpath(resultsdir,"$(modelname)_dog-cycle-car.jpg")
+        save(resfile, imgBoxes)
+        @info "Bounding boxes drawn on image: $resfile"
 
         @test size(res,2) > 0
 
