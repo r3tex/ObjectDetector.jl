@@ -117,6 +117,17 @@ This is only run once when weights are loaded
 flip(x) = x[end:-1:1, end:-1:1, :, :]
 
 """
+    maxpools1(x, kernel = 2)
+We need a max-pool with a fixed stride of 1
+"""
+function maxpools1(x, kernel = 2)
+    x = cat(x, x[:, end:end, :, :], dims = 2)
+    x = cat(x, x[end:end, :, :, :], dims = 1)
+    pdims = PoolDims(x, (kernel, kernel); stride = 1)
+    return maxpool(x, pdims)
+end
+
+"""
     upsample(a, stride)
 
 Optimized upsampling without indexing for better GPU performance
@@ -207,7 +218,11 @@ mutable struct yolo <: Model
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))))
+                if stride==1 && CuFunctional
+                    push!(fn, x -> maxpools1(x, siz)) #Asymmetric padding not supported by CuDNN
+                else
+                    push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))))
+                end
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
