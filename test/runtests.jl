@@ -2,6 +2,9 @@ using ObjectDetector
 using Test, PrettyTables
 using FileIO, ImageCore, ImageTransformations
 
+dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
+oThresh = 0.3 #Overlap Threshold (maximum acceptable overlap)
+
 pretrained_list = [
                     YOLO.v2_tiny_416_COCO,
                     # YOLO.v2_608_COCO,
@@ -35,8 +38,10 @@ for (i, pretrained) in pairs(pretrained_list)
         batch = emptybatch(yolomod)
         batch[:,:,:,1] .= gpu(resizePadImage(IMG, yolomod))
 
-        res = yolomod(batch) #run once
-        val, t_run, bytes, gctime, memallocs = @timed yolomod(batch);
+        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
+        @test size(res,2) > 0
+
+        val, t_run, bytes, gctime, m = @timed yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
         table[i, 4] = true
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = size(res, 2)

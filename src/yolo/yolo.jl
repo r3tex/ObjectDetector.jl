@@ -480,11 +480,14 @@ function bboxiou(box1, box2)
 end
 
 """
-    (yolo::yolo)(img::DenseArray)
+    (yolo::yolo)(img::DenseArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
 Simply pass a batch of images to the yolo object to do inference.
+
+detectThresh: Optionally override the minimum allowable detection confidence
+overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::DenseArray)
+function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
     @assert ndims(img) == 4 # width, height, channels, batchsize
     yolo.W[0] = img
 
@@ -531,7 +534,9 @@ function (yolo::yolo)(img::DenseArray)
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
         weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
         weights = reshape(weights, a+4, :) # reshape to attr, data
-        clipdetect!(weights, Float32(out[:truth])) # set all detections below conf-thresh to zero
+
+        thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
+        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
         findmax!(weights, 6, a)
         push!(outweights, weights)
     end
@@ -542,13 +547,14 @@ function (yolo::yolo)(img::DenseArray)
     batchout = cpu(keepdetections(cat(outweights..., dims=2)))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
+
     classes = unique(batchout[end-1, :])
     output = Array{Array{Float32, 2},1}(undef, 0)
     for c in classes
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
             iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
-            ds = findall(v -> v > yolo.out[1][:ignore], iou)
+            ds = findall(v -> v > overlapThresh, iou)
             detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
             l >= size(detection,2) && break
         end

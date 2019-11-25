@@ -32,7 +32,7 @@ img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","do
 
 batch[:,:,:,1] .= gpu(resizePadImage(img, yolomod)) # Send resized image to the batch
 
-res = yolomod(batch) # Run the model on the length-1 batch
+res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the length-1 batch
 ```
 
 ### Visualzing the result
