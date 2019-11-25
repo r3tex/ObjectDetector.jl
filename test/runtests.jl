@@ -3,8 +3,8 @@ using Test, PrettyTables
 using FileIO, ImageCore, ImageTransformations
 
 dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
-oThresh = 0.3 #Overlap Threshold (maximum acceptable overlap)
-
+oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
+@info "Testing all models with detectThresh = $dThresh, overlapThresh = $oThresh"
 pretrained_list = [
                     YOLO.v2_tiny_416_COCO,
                     # YOLO.v2_608_COCO,
@@ -45,15 +45,13 @@ for (i, pretrained) in pairs(pretrained_list)
         table[i, 4] = true
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = size(res, 2)
+        @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
 
         imgBoxes = drawBoxes(IMG, res)
         resfile = joinpath(resultsdir,"$(modelname)_dog-cycle-car.jpg")
         save(resfile, imgBoxes)
-        @info "Bounding boxes drawn on image: $resfile"
+        @info "$modelname: View result: $resfile"
 
-        @test size(res,2) > 0
-
-        @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
     end
     GC.gc()
 end
