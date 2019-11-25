@@ -16,7 +16,7 @@ v3_416_COCO(;batch=1, silent=false) =
 v3_608_COCO(;batch=1, silent=false) =
     yolo(joinpath(models_dir,"yolov3-608.cfg"), getArtifact("yolov3-COCO"), batch, silent=silent)
 
-v3_608_spp_COCO(;batch=1, silent=false) =
+v3_spp_608_COCO(;batch=1, silent=false) =
     yolo(joinpath(models_dir,"yolov3-spp.cfg"), getArtifact("yolov3-spp-COCO"), batch, silent=silent)
 
 ## YOLOV3-tiny

@@ -2,6 +2,7 @@ using ObjectDetector, FileIO
 
 yolomod = YOLO.v2_tiny_416_COCO(silent=true)
 yolomod = YOLO.v3_tiny_416_COCO(silent=true)
+yolomod = YOLO.v3_spp_608_COCO(silent=true)
 
 batch = emptybatch(yolomod)
 img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))

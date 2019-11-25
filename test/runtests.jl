@@ -9,7 +9,7 @@ pretrained_list = [
                     YOLO.v3_320_COCO,
                     YOLO.v3_416_COCO,
                     YOLO.v3_608_COCO,
-                    # YOLO.v3_608_spp_COCO
+                    # YOLO.v3_spp_608_COCO
                     ]
 
 IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))

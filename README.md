@@ -55,7 +55,7 @@ YOLO.v3_tiny_416_COCO()
 The following are available but do not load due to bugs (work in progress)
 ```julia
 YOLO.v2_608_COCO()
-YOLO.v3_608_spp_COCO()
+YOLO.v3_spp_608_COCO()
 ```
 
 Or custom models can be loaded with:

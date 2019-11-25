@@ -59,7 +59,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
                         YOLO.v3_320_COCO,
                         YOLO.v3_416_COCO,
                         YOLO.v3_608_COCO,
-                        YOLO.v3_608_spp_COCO
+                        YOLO.v3_spp_608_COCO
                         ][select]
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
     IMG = rand(RGB,416,416)
