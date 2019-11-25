@@ -8,6 +8,7 @@ using ImageCore
 Create an image resize blur kernel, for use before reducing image size to avoid aliasing.
 """
 function resizekern(source_size, dest_size)
+    source_size[1:2] == dest_size[1:2] && return nothing
     # Blur before resizing to prevent aliasing (kernel size dependent on both source and target image size)
     σ = 0.75 .* (source_size[1:2] ./ dest_size[1:2])
     if first(σ) < 1
@@ -61,9 +62,9 @@ function resizePadImage(img::Array{T}, model::U) where {T<:ImageCore.Colorant, U
 end
 function resizePadImage(img::Array{T}, target_img_size::Tuple, kern) where {T<:ImageCore.Colorant}
     target_img = zeros(Float32, target_img_size[1:3])
-    return resizePadImage(img, target_img, kern)
+    return resizePadImage!(target_img, img, kern)
 end
-function resizePadImage(img::Array{T}, target_img::Array{U}, kern) where {T<:ImageCore.Colorant, U<:Float32}
+function resizePadImage!(target_img::Array{Float32}, img::Array{T} , kern) where {T<:ImageCore.Colorant}
     target_img_size = sizethatfits(size(img), size(target_img))
     # Determine top and left padding
     vpad_top = floor(Int, (size(target_img,1) - target_img_size[1]) / 2)
