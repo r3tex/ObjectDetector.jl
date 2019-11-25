@@ -105,6 +105,25 @@ A 2019 Macbook Pro (CPU-only, no CUDA)
 └──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
 ```
 
+## Examples
+
+All run with `detectThresh = 0.5`, `overlapThresh = 0.5`
+
+### YOLO.v2_tiny_416_COCO
+![v2_tiny_416_COCO](test/results/v2_tiny_416_COCO_dog-cycle-car.jpg)
+
+### YOLO.v3_tiny_416_COCO
+![v3_tiny_416_COCO](test/results/v3_tiny_416_COCO_dog-cycle-car.jpg)
+
+### YOLO.v3_320_COCO
+![v3_320_COCO](test/results/v3_320_COCO_dog-cycle-car.jpg)
+
+### YOLO.v3_416_COCO
+![v3_416_COCO](test/results/v3_416_COCO_dog-cycle-car.jpg)
+
+### YOLO.v3_608_COCO
+![v3_608_COCO](test/results/v3_608_COCO_dog-cycle-car.jpg)
+
 
 [discourse-tag-url]: https://discourse.julialang.org/tags/yolo
 
