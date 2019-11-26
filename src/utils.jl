@@ -23,7 +23,8 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 """
-    drawBoxes(img::Array, results)
+    drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results)
+    drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results)
 
 Draw boxes on image for each BBOX result.
 """
