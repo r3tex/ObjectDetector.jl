@@ -24,7 +24,7 @@ pkg> add https://github.com/r3tex/ObjectDetector.jl
 ```julia
 using ObjectDetector, FileIO
 
-yolomod = YOLO.v3_tiny_416_COCO(batch=1, silent=true) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
+yolomod = YOLO.v3_608_COCO(batch=1, silent=true) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
 
 batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU if available
 
@@ -37,10 +37,11 @@ res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the
 
 ### Visualzing the result
 ```julia
-imgBoxes = drawBoxes(img, res)
+target_img_size, padding = ObjectDetector.calcSizeAndPadding(size(img), size(batch))
+imgBoxes = drawBoxes(img, yolomod, padding, res)
 save(joinpath(@__DIR__,"result.png"), imgBoxes)
 ```
-![dog-cycle-car with boxes](examples/result.png)
+![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.jpg)
 
 
 ## Pretrained Models
