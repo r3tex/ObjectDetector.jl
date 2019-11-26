@@ -5,7 +5,7 @@ Create an empty batched input array on the GPU if available.
 """
 function emptybatch(model::T) where {T<:Model}
     modelInputSize = getModelInputSize(model)
-    gpu(Array{Float32}(undef, modelInputSize...))
+    gpu(zeros(Float32, modelInputSize...))
 end
 
 """
@@ -27,22 +27,23 @@ createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 Draw boxes on image for each BBOX result.
 """
-function drawBoxes(img::Array, results)
-    w = size(img,1)
-    h = size(img,2)
-    imgCopy = copy(img)
-    size(results) == (0,) && return imgCopy
+drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results) = drawBoxes!(copy(img), model, padding, results)
+function drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results)
+    modelratio = model.cfg[:width] / model.cfg[:height]
+    h = size(img,2) / modelratio
+    w = size(img,2)
+    length(results) == 0 && return img
     for i in 1:size(results,2)
-        bbox = results[1:4,i]
+        bbox = results[1:4,i] .- padding
         class = results[end-1,i]
-        conf = results[end-2,i]
+        conf = results[5,i]
         p = Point(round(Int, bbox[1]*w), round(Int, bbox[2]*h))
         q = Point(round(Int, bbox[1]*w), round(Int, bbox[4]*h))
         r = Point(round(Int, bbox[3]*w), round(Int, bbox[2]*h))
         s = Point(round(Int, bbox[3]*w), round(Int, bbox[4]*h))
-        draw!(imgCopy, Polygon([p,q,s,r]), zero(eltype(imgCopy)))
+        draw!(img, Polygon([p,q,s,r]), zero(eltype(img)))
     end
-    return imgCopy
+    return img
 end
 
 

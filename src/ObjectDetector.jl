@@ -1,6 +1,6 @@
 module ObjectDetector
 export YOLO
-export resizePadImage, resizekern, sizethatfits, emptybatch, drawBoxes
+export resizePadImage, resizePadImage!, resizekern, sizethatfits, emptybatch, drawBoxes
 
 import Flux.gpu
 export gpu
