@@ -46,6 +46,8 @@ end
     resizePadImage(img::Array{T}, model::yolo) where {T<:ImageCore.Colorant}
     resizePadImage(img::Array{T}, target_img_size::Tuple{Int,Int}, kern) where {T<:.Color}
     resizePadImage(img::Array{T}, target_img::Array{U}, kern) where {T<:Color, U<:Float32}
+    resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:Real}
+    resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
 
 Loads and prepares (resizes + pads) an image to fit within a given shape.
 Returns the image and the padding.
