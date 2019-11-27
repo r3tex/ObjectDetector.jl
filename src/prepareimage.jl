@@ -83,16 +83,20 @@ function resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{
     if size(img,1) > size(target_img, 1) #Apply blur first if reducing size, to avoid aliasing
         imgblur = ImageFiltering.imfilter(img, kern, NA())
         imgr = ImageTransformations.imresize(imgblur, target_img_size[1:2])
-        img_ready = view(permuteddimsview(Float32.(channelview(imgr)), [3,2,1]),:,:,1:size(target_img,3))
-        target_img_subregion .= img_ready
+        img_chv = Float32.(channelview(imgr))
+        if (size(img_chv,3) != size(target_img,3)) && (size(img_chv,3) == 1)
+            imgr_chan = repeat(img_chv, outer=[1,1,size(target_img,3)])
+            img_ready = permuteddimsview(imgr_chan, [2,1,3])
+        else
+            img_ready = view(permuteddimsview(img_chv, [3,2,1]),:,:,1:size(target_img,3))
+        end
     elseif size(img,1) < size(target_img, 1)
         imgr = ImageTransformations.imresize(img, target_img_size[1:2])
         img_ready = view(permuteddimsview(Float32.(channelview(imgr)), [3,2,1]),:,:,1:size(target_img,3))
-        target_img_subregion .= img_ready
     else
         img_ready = view(permuteddimsview(Float32.(channelview(img)), [3,2,1]),:,:,1:size(target_img,3))
-        target_img_subregion .= img
     end
+    target_img_subregion .= gpu(img_ready)
 
     return target_img
 end

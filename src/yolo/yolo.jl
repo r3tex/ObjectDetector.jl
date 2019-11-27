@@ -523,8 +523,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
             weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
         end
 
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- weights[:, :, 3, :, :] .* 0.5 #x1
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- weights[:, :, 4, :, :] .* 0.5 #y1
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
         weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
         weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
