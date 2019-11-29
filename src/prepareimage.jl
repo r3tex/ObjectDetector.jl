@@ -29,12 +29,12 @@ function sizethatfits(original_size, target_shape)
     if original_size[1] > original_size[2]
         target_img_size = (
             target_shape[1],
-            floor(Int, target_shape[2] * (original_size[2] / original_size[1])),
+            floor(Int, target_shape[1] * (original_size[2] / original_size[1])),
             channels
         )
     else
         target_img_size = (
-        floor(Int, target_shape[1] * (original_size[1] / original_size[2])),
+        floor(Int, target_shape[2] * (original_size[1] / original_size[2])),
         target_shape[2],
         channels
         )
@@ -56,7 +56,7 @@ function resizePadImage(img::Array{T}, model::U) where {T<:ImageCore.Colorant, U
     modelInputSize = getModelInputSize(model)
     if size(img) == modelInputSize[1:2]
         #TODO: Generalize for number of channels (i.e. some models trained on 1 channel)
-        return permutedims(Float32.(channelview(img)), [3,2,1])[:,:,1:3]
+        return permutedims(Float32.(channelview(img)), [2,3,1])[:,:,1:3]
     end
     img_size = size(img)
     target_img_size = sizethatfits(img_size, modelInputSize)
@@ -68,17 +68,23 @@ function resizePadImage(img::Array{T}, target_img_size::Tuple, kern) where {T<:I
     return resizePadImage!(target_img, img, kern)
 end
 function resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:Real}
-    return resizePadImage!(target_img, colorview(RGB, permuteddimsview(img, [3,2,1])), kern)
+    if size(img,3) == 1
+        return resizePadImage!(target_img, colorview(Gray, img), kern)
+    elseif size(img,3) == 3
+        return resizePadImage!(target_img, colorview(RGB, permuteddimsview(img, [3,1,2])), kern)
+    else
+        error("Array needs 3rd dim length of either 1 or 3 to populate color")
+    end
 end
 function resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
     target_img_size, padding = calcSizeAndPadding(size(img), size(target_img))
     tw, th, _ = size(target_img)
-    padding = round.(Int,padding .* [th,tw,th,tw])
+    padding = round.(Int,padding .* [tw,th,tw,th])
 
-    vindex = (padding[1]+1):(size(target_img, 1) - padding[3])
-    hindex = (padding[2]+1):(size(target_img, 2) - padding[4])
+    hindex = (padding[1]+1):(size(target_img, 1) - padding[3])
+    vindex = (padding[2]+1):(size(target_img, 2) - padding[4])
 
-    target_img_subregion = view(target_img, vindex, hindex, :)
+    target_img_subregion = view(target_img, hindex, vindex, :)
 
     if size(img,1) > size(target_img, 1) #Apply blur first if reducing size, to avoid aliasing
         imgblur = ImageFiltering.imfilter(img, kern, NA())
@@ -88,13 +94,13 @@ function resizePadImage!(target_img::AbstractArray{Float32}, img::AbstractArray{
             imgr_chan = repeat(img_chv, outer=[1,1,size(target_img,3)])
             img_ready = permuteddimsview(imgr_chan, [2,1,3])
         else
-            img_ready = view(permuteddimsview(img_chv, [3,2,1]),:,:,1:size(target_img,3))
+            img_ready = view(permuteddimsview(img_chv, [2,3,1]),:,:,1:size(target_img,3))
         end
     elseif size(img,1) < size(target_img, 1)
         imgr = ImageTransformations.imresize(img, target_img_size[1:2])
-        img_ready = view(permuteddimsview(Float32.(channelview(imgr)), [3,2,1]),:,:,1:size(target_img,3))
+        img_ready = view(permuteddimsview(Float32.(channelview(imgr)), [2,3,1]),:,:,1:size(target_img,3))
     else
-        img_ready = view(permuteddimsview(Float32.(channelview(img)), [3,2,1]),:,:,1:size(target_img,3))
+        img_ready = view(permuteddimsview(Float32.(channelview(img)), [2,3,1]),:,:,1:size(target_img,3))
     end
     target_img_subregion .= gpu(img_ready)
 
@@ -112,8 +118,7 @@ function calcSizeAndPadding(img_size, model_size)
     hpad_right = model_size[1] - (hpad_left + target_img_size[1])
     vpad_bottom = model_size[2] - (vpad_top + target_img_size[2])
 
-    #padding = [hpad_left, vpad_top, hpad_right, vpad_bottom]
-    padding = [vpad_top, hpad_left, vpad_bottom, hpad_right]
+    padding = [hpad_left, vpad_top, hpad_right, vpad_bottom]
     padding = padding ./ [model_size[1], model_size[2], model_size[1], model_size[2]]
     return target_img_size, padding
 end
