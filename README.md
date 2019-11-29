@@ -45,18 +45,36 @@ save(joinpath(@__DIR__,"result.png"), imgBoxes)
 
 
 ## Pretrained Models
-Most of the darknet models that are pretrained on the COCO dataset are available:
+The darknet YOLO models from https://pjreddie.com/darknet/yolo/ that are pretrained on the COCO dataset are available:
+
 ```julia
+YOLO.v2_COCO() #Currently broken
+YOLO.v2_tiny_COCO()
+
+YOLO.v3_COCO()
+YOLO.v3_spp_608_COCO() #Currently broken
+YOLO.v3_tiny_COCO()
+```
+Their width and height can be modified with:
+```julia
+YOLO.v3_COCO(w=416,h=416)
+```
+and further configurations can be modified by editing the .cfg file structure after its read, but before its loaded:
+```julia
+yolomod = YOLO.v3_COCO(silent=false, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
+```
+`cfgchanges` takes the form of a vector of tuples with `(layer symbol, ith layer that matches given symbol, field symbol, value)`
+
+Also, convenient sized models can be loaded via
+```julia
+YOLO.v2_608_COCO()
 YOLO.v2_tiny_416_COCO()
+
 YOLO.v3_320_COCO()
 YOLO.v3_416_COCO()
 YOLO.v3_608_COCO()
-YOLO.v3_tiny_416_COCO()
-```
-The following are available but do not load due to bugs (work in progress)
-```julia
-YOLO.v2_608_COCO()
 YOLO.v3_spp_608_COCO()
+YOLO.v3_tiny_416_COCO()
 ```
 
 Or custom models can be loaded with:
@@ -66,7 +84,10 @@ YOLO.yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch 
 
 For instance the pretrained models are defined as:
 ```julia
-v2_608_COCO(;batch=1, silent=false) = yolo(joinpath(models_dir,"yolov2-608.cfg"), getArtifact("yolov2-COCO"), batch, silent=silent)
+function v3_COCO(;batch=1, silent=false, cfgchanges=nothing, w=416, h=416)
+    cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)]
+    yolo(joinpath(models_dir,"yolov3-416.cfg"), getArtifact("yolov3-COCO"), batch, silent=silent, cfgchanges=cfgchanges)
+end
 ```
 
 The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3)

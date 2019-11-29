@@ -158,6 +158,27 @@ const ACT = Dict(
     "linear" => identity
 )
 
+"""
+    overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,Any}}}, cfgchanges::Vector{Tuple{Symbol,Int,Symbol,Any}})
+
+Override settings from the YOLO .cfg file, before loading the model.
+`cfgchanges` takes the form of a vector of (layer symbol, ith instance of given layer, field symbol, value)
+i.e.
+`overridecfg!(cfgvec, [(:net, 1, :height, 512), (:net, 1, :width, 512)])`
+"""
+function overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}},
+                        cfgchanges::Vector{Tuple{Symbol,Int,Symbol,U}};
+                        silent::Bool = false) where {T,U}
+    layers = map(x->first(x), cfgchanges)
+    for cfgchange in cfgchanges
+        layer_idxs = findall(layers .== cfgchange[1])
+        length(layer_idxs) < cfgchange[2] && error("Number of $(cfgchange[1]) layers found ($(length(layer_idxs))) less than desired ($(cfgchange[2])).")
+        layer_idx = layer_idxs[cfgchange[2]]
+        !haskey(last(cfgvec[layer_idx]), cfgchange[3]) && error("Key not found in selected layer dict")
+        cfgvec[layer_idx][2][cfgchange[3]] = cfgchange[4]
+    end
+end
+
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
@@ -168,10 +189,11 @@ mutable struct yolo <: Model
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false) = begin
+    yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
+        cfgchanges != nothing && overridecfg!(cfgvec, cfgchanges, silent=silent)
 
         cfg = cfgvec[1][2]
         yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
