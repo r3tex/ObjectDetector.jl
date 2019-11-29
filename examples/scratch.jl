@@ -2,7 +2,7 @@ using ObjectDetector, FileIO
 
 #yolomod = YOLO.v2_tiny_416_COCO(silent=true)
 # yolomod = YOLO.v3_tiny_416_COCO(silent=true)
-yolomod = YOLO.v3_608_COCO(silent=true)
+yolomod = YOLO.v3_608_COCO(silent=false, cfgchanges=[(:net,1,:width,512),(:net,1,:height,384)])
 #yolomod = YOLO.v3_spp_608_COCO(silent=true)
 
 batch = emptybatch(yolomod)
