@@ -63,3 +63,22 @@ for (j, imagename) in pairs(testimages)
 end
 pretty_table(table, header)
 @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
+
+
+@testset "Custom cfg's" begin
+    @testset "Valid non-square dimensions (512x384)" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
+        batch = emptybatch(yolomod)
+        batch[:,:,:,1] .= gpu(resizePadImage(IMG, yolomod))
+        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
+        @test size(res,2) > 0
+    end
+    @testset "Invalid non-square dimensions" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        # invalid height
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=512, h=383)
+        # invalid width
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=511, h=384)
+    end
+end
