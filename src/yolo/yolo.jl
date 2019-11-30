@@ -179,6 +179,21 @@ function overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}},
     end
 end
 
+"""
+    assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,Any}}})
+
+Assert that height and width conform to the model capabilities.
+"""
+function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
+    width = cfgvec[1][2][:width]
+    height = cfgvec[1][2][:height]
+    firstconvfilters = cfgvec[2][2][:filters]
+
+    @assert (mod(width, firstconvfilters) == 0) "Model width $width not compatible with first conv size of filters=$firstconvfilters. Width should be an integer multiple of $firstconvfilters"
+    @assert (mod(height, firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of $firstconvfilters"
+    return true
+end
+
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
@@ -193,7 +208,12 @@ mutable struct yolo <: Model
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
+
+        # make and requested changes before loading
         cfgchanges != nothing && overridecfg!(cfgvec, cfgchanges, silent=silent)
+
+        # check that chosen width and height of model conform with first conv layer
+        assertdimconform(cfgvec)
 
         cfg = cfgvec[1][2]
         yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
@@ -320,8 +340,9 @@ mutable struct yolo <: Model
         end
         testimgs = nothing
         !silent && print("\n\n")
-        matrix_sizes = [size(v, 1) for (k,v) in W]
-        cfg[:gridsize] = minimum(matrix_sizes) # the gridsize is determined by the smallest matrix
+        matrix_sizes_x = [size(v, 1) for (k,v) in W]
+        matrix_sizes_y = [size(v, 2) for (k,v) in W]
+        cfg[:gridsize] = (minimum(matrix_sizes_x), minimum(matrix_sizes_y)) # the gridsize is determined by the smallest matrix
         cfg[:layer2out] = layer2out
         push!(out, Dict(:idx => length(W)))
 
@@ -381,7 +402,7 @@ function Base.show(io::IO, yolo::yolo)
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
     ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
-    ln3 = "gridsize: $(yolo.cfg[:gridsize])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
+    ln3 = "gridsize: $(yolo.cfg[:gridsize][1])x$(yolo.cfg[:gridsize][2])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
 end
 
