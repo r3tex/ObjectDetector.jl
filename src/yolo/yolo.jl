@@ -305,6 +305,7 @@ mutable struct yolo <: Model
 
         # PART 2 - THE SKIPS
         ####################
+        # Create test image. Note that darknet is row-major, so width-first
         testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
@@ -395,6 +396,11 @@ mutable struct yolo <: Model
     end
 end
 
+"""
+    getModelInputSize(model::yolo)
+
+Returns model size tuple in (width, height, channels, batchsize) order (row-major)
+"""
 getModelInputSize(model::yolo) = (model.cfg[:width], model.cfg[:height], model.cfg[:channels], model.cfg[:batchsize])
 
 function Base.show(io::IO, yolo::yolo)

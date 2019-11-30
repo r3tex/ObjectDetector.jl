@@ -1,6 +1,6 @@
 using ObjectDetector
 using Test, PrettyTables
-using FileIO, ImageCore, ImageTransformations
+using FileIO, ImageCore
 
 dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
 oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
@@ -40,8 +40,7 @@ for (j, imagename) in pairs(testimages)
             @info "$modelname: Loaded in $(round(t_load, digits=2)) seconds."
 
             batch = emptybatch(yolomod)
-            batch[:,:,:,1] .= gpu(resizePadImage(IMG, yolomod))
-            target_img_size, padding = ObjectDetector.calcSizeAndPadding(size(IMG), size(batch))
+            batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
 
             res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
             @test size(res,2) > 0
@@ -70,7 +69,7 @@ pretty_table(table, header)
         IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
         batch = emptybatch(yolomod)
-        batch[:,:,:,1] .= gpu(resizePadImage(IMG, yolomod))
+        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
         res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
         @test size(res,2) > 0
     end

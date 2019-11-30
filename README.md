@@ -30,10 +30,21 @@ batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU 
 
 img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))
 
-batch[:,:,:,1] .= gpu(resizePadImage(img, yolomod)) # Send resized image to the batch
+batch[:,:,:,1], padding = prepareImage(img, yolomod) # Send resized image to the batch
 
 res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the length-1 batch
 ```
+
+Note that while the convention in Julia is column-major, where images are loaded
+such that a _widescreen_ image matrix would have a smaller 1st dimension than 2nd.
+Darknet is row-major, so the image matrix needs to have its first and second dims
+permuted before being passed to batch. Otherwise features may not be detected.
+`prepareImage()` includes this conversion automatically.
+
+Also, non-square models can be loaded, but care should be taken to ensure that each
+dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32)
+
+
 
 ### Visualzing the result
 ```julia
@@ -63,7 +74,9 @@ and further configurations can be modified by editing the .cfg file structure af
 ```julia
 yolomod = YOLO.v3_COCO(silent=false, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
 ```
-`cfgchanges` takes the form of a vector of tuples with `(layer symbol, ith layer that matches given symbol, field symbol, value)`
+`cfgchanges` takes the form of a vector of tuples with:
+`(layer symbol, ith layer that matches given symbol, field symbol, value)`
+Note that if `cfgchanges` is provided, optional `h` and `w` args are ignored.
 
 Also, convenient sized models can be loaded via
 ```julia
