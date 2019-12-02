@@ -1,6 +1,6 @@
 using ObjectDetector
 using Test, PrettyTables
-using FileIO, ImageCore, ImageTransformations
+using FileIO, ImageCore
 
 dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
 oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
@@ -40,8 +40,7 @@ for (j, imagename) in pairs(testimages)
             @info "$modelname: Loaded in $(round(t_load, digits=2)) seconds."
 
             batch = emptybatch(yolomod)
-            batch[:,:,:,1] .= gpu(resizePadImage(IMG, yolomod))
-            target_img_size, padding = ObjectDetector.calcSizeAndPadding(size(IMG), size(batch))
+            batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
 
             res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
             @test size(res,2) > 0
@@ -63,3 +62,117 @@ for (j, imagename) in pairs(testimages)
 end
 pretty_table(table, header)
 @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
+
+
+@testset "Custom cfg's" begin
+    @testset "Valid non-square dimensions (512x384)" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
+        batch = emptybatch(yolomod)
+        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
+        @test size(res,2) > 0
+    end
+    @testset "Invalid non-square dimensions" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        # invalid height
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=512, h=383)
+        # invalid width
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=511, h=384)
+    end
+end
+
+@testset "Drawing boxes" begin
+    # Testing that boxes are drawn as expected
+
+    ### square model
+    yolomod = YOLO.v3_tiny_COCO(w=416, h=416, silent=true)
+    #Nonsquare low aspect ratio image
+    img = ones(Gray, 200, 100)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    #Nonsquare high aspect ratio image
+    img = ones(Gray, 100, 200)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    #Square image, square model
+    img = ones(Gray, 100, 100)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    ### nonsquare low aspect ratio model
+    yolomod = YOLO.v3_tiny_COCO(w=512, h=416, silent=true)
+    #Square image
+    img = ones(Gray, 100, 100)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    #nonsquare low aspect ratio image
+    img = ones(Gray, 200, 100)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    ### nonsquare high aspect ratio model
+    yolomod = YOLO.v3_tiny_COCO(w=416, h=512, silent=true)
+    #Square image
+    img = ones(Gray, 100, 100)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    #nonsquare low aspect ratio image
+    img = ones(Gray, 100, 200)
+    batch = emptybatch(yolomod)
+    batch[:,:,:,1], padding = prepareImage(img, yolomod)
+    res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
+    imgboxes = drawBoxes(img, yolomod, padding, res)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+    ## Non-transposed
+    imgboxes = drawBoxes(collect(img'), yolomod, padding, res, transpose=false)
+    @test all(imgboxes[1,:] .== Gray(0))
+    @test all(imgboxes[:,1] .== Gray(0))
+    @test all(imgboxes[end,:] .== Gray(0))
+    @test all(imgboxes[:,end] .== Gray(0))
+
+end

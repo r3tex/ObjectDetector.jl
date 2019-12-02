@@ -28,21 +28,36 @@ createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 Draw boxes on image for each BBOX result.
 """
-drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results) = drawBoxes!(copy(img), model, padding, results)
-function drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results)
-    modelratio = model.cfg[:width] / model.cfg[:height]
-    h = size(img,2) / modelratio
-    w = size(img,2)
+drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
+function drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results; transpose=true)
+    imgratio = size(img,2) / size(img,1)
+    if transpose
+        modelratio = model.cfg[:width] / model.cfg[:height]
+        x1i, y1i, x2i, y2i = [1, 2, 3, 4]
+    else
+        modelratio = model.cfg[:height] / model.cfg[:width]
+        x1i, y1i, x2i, y2i = [2, 1, 4, 3]
+    end
+    if modelratio > imgratio
+        h, w = size(img,1) .* (1, modelratio)
+    else
+        h, w = size(img,2) ./ (modelratio, 1)
+    end
+
+    # p1 = Point(1, 1)
+    # p2 = Point(round(Int, w-((padding[x1i]+padding[x2i])*w)), round(Int, h-((padding[y1i]+padding[y2i])*h)))
+    # draw!(img, LineSegment(p1, p2), zero(eltype(img)))
     length(results) == 0 && return img
     for i in 1:size(results,2)
-        bbox = results[1:4,i] .- padding
-        class = results[end-1,i]
+        bbox = results[1:4, i] .- padding
+        class = results[end-1, i]
         conf = results[5,i]
-        p = Point(round(Int, bbox[1]*w), round(Int, bbox[2]*h))
-        q = Point(round(Int, bbox[1]*w), round(Int, bbox[4]*h))
-        r = Point(round(Int, bbox[3]*w), round(Int, bbox[2]*h))
-        s = Point(round(Int, bbox[3]*w), round(Int, bbox[4]*h))
-        draw!(img, Polygon([p,q,s,r]), zero(eltype(img)))
+        p = Point(round(Int, bbox[x1i]*w)+1, round(Int, bbox[y1i]*h)+1)
+        q = Point(round(Int, bbox[x2i]*w), round(Int, bbox[y1i]*h)+1)
+        r = Point(round(Int, bbox[x1i]*w)+1, round(Int, bbox[y2i]*h))
+        s = Point(round(Int, bbox[x2i]*w), round(Int, bbox[y2i]*h))
+        pol = Polygon([p,q,s,r])
+        draw!(img, pol, zero(eltype(img)))
     end
     return img
 end

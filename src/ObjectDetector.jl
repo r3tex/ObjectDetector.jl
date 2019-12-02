@@ -1,9 +1,10 @@
 module ObjectDetector
 export YOLO
-export resizePadImage, resizePadImage!, resizekern, sizethatfits, emptybatch, drawBoxes
+export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBoxes
 
 import Flux.gpu
-export gpu
+import Flux.cpu
+export gpu, cpu
 
 using Pkg.Artifacts
 getArtifact(name::String) = joinpath(@artifact_str(name), "$(name).weights")
