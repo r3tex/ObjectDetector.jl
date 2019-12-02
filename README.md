@@ -38,8 +38,8 @@ res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the
 Note that while the convention in Julia is column-major, where images are loaded
 such that a _widescreen_ image matrix would have a smaller 1st dimension than 2nd.
 Darknet is row-major, so the image matrix needs to have its first and second dims
-permuted before being passed to batch. Otherwise features may not be detected.
-`prepareImage()` includes this conversion automatically.
+permuted before being passed to batch. Otherwise features may not be detected due to 
+being rotated 90º. The function `prepareImage()` includes this conversion automatically.
 
 Also, non-square models can be loaded, but care should be taken to ensure that each
 dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32)
