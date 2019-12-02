@@ -1,6 +1,7 @@
 # ObjectDetector.jl
 
 Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
+Uses CUDA, if available.
 
 
 | **Platform**                                                               | **Build Status**                                                                                |
