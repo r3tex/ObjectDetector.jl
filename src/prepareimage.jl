@@ -55,7 +55,7 @@ function prepareImage(img::AbstractArray{T}, model::U) where {T<:ImageCore.Color
     modelInputSize = getModelInputSize(model)
     if size(img) == modelInputSize[1:2]
         #TODO: Generalize for number of channels (i.e. some models trained on 1 channel)
-        return permutedims(Float32.(channelview(img)), [3,2,1])[:,:,1:3], [0,0,0,0]
+        return (gpu(permutedims(Float32.(channelview(img)), [3,2,1])[:,:,1:3]), [0,0,0,0])
     end
     img_size = size(img)[[2,1]]
     img_resized_size = sizethatfits(img_size, modelInputSize)
@@ -64,10 +64,10 @@ function prepareImage(img::AbstractArray{T}, model::U) where {T<:ImageCore.Color
 end
 
 prepareImage(img::AbstractArray{T}, modelInputSize::Tuple, kern) where {T<:ImageCore.Colorant} =
-    prepareImage!(zeros(Float32, modelInputSize[1:3]), img, kern)
+    prepareImage!(gpu(zeros(Float32, modelInputSize[1:3])), img, kern)
 
 function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:Real}
-    size(img)[2,1,3] == size(dest_arr) && return permuteddimsview(img, [2,1,3]), [0,0,0,0]
+    size(img)[2,1,3] == size(dest_arr) && return (gpu(permuteddimsview(img, [2,1,3])), [0,0,0,0])
 
     size(img,3) == 1 && return prepareImage!(dest_arr, colorview(Gray, img), kern)
 
@@ -111,5 +111,5 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, 
     end
     target_img_subregion .= gpu(img_ready)
     scaled_padding = padding ./ size(dest_arr)[[1,2,1,2]]
-    return dest_arr, scaled_padding
+    return (dest_arr, scaled_padding)
 end
