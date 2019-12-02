@@ -49,9 +49,8 @@ dimension is an integer multiple of the filter size of the first conv layer (typ
 
 ### Visualzing the result
 ```julia
-target_img_size, padding = ObjectDetector.calcSizeAndPadding(size(img), size(batch))
 imgBoxes = drawBoxes(img, yolomod, padding, res)
-save(joinpath(@__DIR__,"result.png"), imgBoxes)
+save("result.png", imgBoxes)
 ```
 ![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.jpg)
 
