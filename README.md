@@ -5,7 +5,7 @@ Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet
 
 | **Platform**                                                               | **Build Status**                                                                                |
 |:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
-| x86 & AARCH Linux, MacOS | [![][travis-img]][travis-url] |
+| 64-bit Linux, MacOS, Windows & ARM64 | [![][travis-img]][travis-url] |
 
 
 ## Installation
