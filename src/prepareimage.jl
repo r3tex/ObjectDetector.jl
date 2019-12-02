@@ -24,9 +24,9 @@ end
 
 Takes an original image size, and fits it to a target shape for image resizing. Maintains aspect ratio.
 """
-function sizethatfits(src, dst)
-    scale = minimum([dst[1]/src[1], dst[2]/src[2]])
-    result = floor.(Int, src[[1,2]] .* scale)
+function sizethatfits(src_size, dst_size)
+    scale = minimum([dst_size[1]/src_size[1], dst_size[2]/src_size[2]])
+    result = floor.(Int, src_size[[1,2]] .* scale)
     return result
 end
 
@@ -39,7 +39,7 @@ size_inner must be equal or smaller than size_outer
 function getpadding(size_inner, size_outer)
     size_diff = size_outer[1:2] .- size_inner[1:2]
     @assert all(size_diff .>= 0) "`size_inner` should be equal or smaller in both dimensions than `size_outer`"
-    padding = round.(Int, [size_diff[1]/2, size_diff[2]/2, size_diff[1]/2, size_diff[2]/2])
+    padding = [floor(Int, size_diff[1]/2), floor(Int, size_diff[2]/2), ceil(Int, size_diff[1]/2), ceil(Int, size_diff[2]/2)]
 end
 
 """
@@ -88,15 +88,24 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, 
     if any(size(imgPerm)[1:2] .> size(dest_arr)[1:2]) #Apply blur first if reducing size, to avoid aliasing
         imgblur = ImageFiltering.imfilter(imgPerm, kern, NA())
         imgr = ImageTransformations.imresize(imgblur, img_resized_size[1:2])
-        img_chv = Float32.(permuteddimsview(channelview(imgr), [2,3,1]))
-        if (size(img_chv,3) != size(dest_arr, 3)) && (size(img_chv, 3) == 1)
-            img_ready = repeat(img_chv, outer=[1,1,size(dest_arr, 3)])
+        img_chv = channelview(imgr)
+        if ndims(img_chv) == 2
+            img_ready = repeat(Float32.(reshape(img_chv,(size(img_chv)...,1))),
+                        outer=[1,1,size(dest_arr, 3)])
+        elseif (size(img_chv,1) != size(dest_arr, 3)) && (size(img_chv, 1) == 1)
+            img_ready = repeat(Float32.(permuteddimsview(img_chv, [2,3,1])),
+                        outer=[1,1,size(dest_arr, 3)])
         else
-            img_ready = view(img_chv, :, :, 1:size(dest_arr,3))
+            img_ready = permuteddimsview(img_chv, [2,3,1])[:, :, 1:size(dest_arr,3)]
         end
     elseif any(size(imgPerm)[1:2] .< size(dest_arr)[1:2])
         imgr = ImageTransformations.imresize(imgPerm, img_resized_size[1:2])
-        img_ready = view(permuteddimsview(Float32.(channelview(imgr)), [2,3,1]), :, :, 1:size(dest_arr,3))
+        img_chv = channelview(imgr)
+        if ndims(img_chv) == 2
+            img_ready = Float32.(reshape(img_chv, (size(img_chv)...,1)))
+        else
+            img_ready = view(permuteddimsview(Float32.(img_chv), [2,3,1]), :, :, 1:size(dest_arr,3))
+        end
     else
         img_ready = view(permuteddimsview(Float32.(channelview(imgPerm)), [2,3,1]), :, :, 1:size(dest_arr,3))
     end
