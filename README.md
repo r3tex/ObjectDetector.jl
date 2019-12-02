@@ -14,7 +14,7 @@ Uses CUDA, if available.
 Requires julia v1.3+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
 
 ```
-pkg> add https://github.com/r3tex/ObjectDetector.jl
+pkg> add ObjectDetector
 ```
 
 ## Usage
