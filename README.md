@@ -110,7 +110,7 @@ The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3
 Pretrained models can be easily tested with `ObjectDetector.benchmark()`.
 
 Note that the benchmark was run once before the examples here. Initial load time
-of the first model loaded is typically between 3-20 seconds.
+of the first model loaded is typically between 3-20 seconds. See the [package-compilation](#package-compilation)  section below for compilation instructions to speed up loading.
 
 A desktop with a GTX 2060:
 ```
@@ -161,11 +161,13 @@ All run with `detectThresh = 0.5`, `overlapThresh = 0.5`
 
 
 ## Package Compilation
+
 If initial load times are critical, the package can be compiled and loaded as a
 sysimage, such that initial load time reduces to ~4 seconds, and loading of the
 first model also takes ~4 seconds (as opposed to current performance on 1.3.0 of
 ~20 seconds for package load, and ~20 seconds for first model load)
-See `dev/compilation/compiler.jl` for instructions.
+
+See [dev/compilation/compiler.jl](dev/compilation/compiler.jl) for instructions.
 
 [discourse-tag-url]: https://discourse.julialang.org/tags/yolo
 
