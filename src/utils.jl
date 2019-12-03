@@ -1,9 +1,9 @@
 """
-    emptybatch(model::T) where {T<:Model}
+    emptybatch(model::T) where {T<:AbstractModel}
 
 Create an empty batched input array on the GPU if available.
 """
-function emptybatch(model::T) where {T<:Model}
+function emptybatch(model::T) where {T<:AbstractModel}
     modelInputSize = getModelInputSize(model)
     gpu(zeros(Float32, modelInputSize...))
 end
