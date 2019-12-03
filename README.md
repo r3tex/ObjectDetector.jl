@@ -6,7 +6,7 @@ Uses CUDA, if available.
 
 | **Platform**                                                               | **Build Status**                                                                                |
 |:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
-| 64-bit Linux, MacOS, Windows & ARM64 | [![][travis-img]][travis-url] |
+| 64-bit Linux, MacOS, Windows & ARM64 | [![][travis-img]][travis-url] [![][codecov-img]][codecov-url] |
 
 
 ## Installation
