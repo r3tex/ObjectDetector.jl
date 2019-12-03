@@ -17,7 +17,7 @@ using BenchmarkTools
 using PrettyTables
 using ImageDraw
 
-abstract type Model end
+abstract type AbstractModel end
 function getModelInputSize end
 
 include("prepareimage.jl")
