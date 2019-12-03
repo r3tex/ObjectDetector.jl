@@ -7,3 +7,4 @@
 !/deps/build.jl
 *.weights
 Manifest.toml
+*.so
