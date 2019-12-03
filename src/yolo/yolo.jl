@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..Model, ..getArtifact, ..getModelInputSize
+import ..AbstractModel, ..getArtifact, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
 
@@ -114,11 +114,12 @@ prettyprint(str, col) = for (s, c) in zip(str, col) printstyled(s, color=c) end
 Flip weights to make crosscorelation kernels work using convolution filters
 This is only run once when weights are loaded
 """
-flip(x) = x[end:-1:1, end:-1:1, :, :]
+flip(x) = @view x[end:-1:1, end:-1:1, :, :]
 
 """
     maxpools1(x, kernel = 2)
-We need a max-pool with a fixed stride of 1
+We need a max-pool with a fixed stride of 1. Required given assymetric padding
+isn't supported by CuDNN
 """
 function maxpools1(x, kernel = 2)
     x = cat(x, x[:, end:end, :, :], dims = 2)
@@ -197,7 +198,7 @@ end
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
-mutable struct yolo <: Model
+mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
     chain::Array{Any, 1}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
@@ -335,7 +336,7 @@ mutable struct yolo <: Model
                 end
             end
             push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(testimgs, chainstack[end](testimgs[end]))
+            push!(testimgs, chainstack[end](testimgs[end])) # run the previous test image
             push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
