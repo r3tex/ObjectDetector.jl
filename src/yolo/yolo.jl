@@ -1,6 +1,11 @@
 module YOLO
 export getModelInputSize
 
+### For debugging
+using TimerOutputs
+const to = TimerOutput()
+###
+
 import ..AbstractModel, ..getArtifact, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -365,21 +370,21 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = reshape(zerogen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            offset = zerogen(Float32, w, h, 2, length(anchormask), b)
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            scale = onegen(Float32, w, h, 2, length(anchormask), b)
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            anchor = onegen(Float32, w, h, 2, length(anchormask), b)
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
@@ -421,7 +426,7 @@ end
 
 Sets all values under a given threshold to zero
 """
-function clipdetect!(input::Array, conf)
+function clipdetect!(input::AbstractArray, conf)
    rows, cols = size(input)
    for i in 1:cols
        input[5, i] = ifelse(input[5, i] > conf, input[5, i], Float32(0))
@@ -445,10 +450,10 @@ end
 
 Findmax, get the class with highest confidence and class number out.
 """
-function findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
-    for i in 1:size(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
-    end
+function findmax!(input::AbstractArray{T}, idst::Int, idend::Int) where {T}
+    vals = view(input, idst:idend, :)
+    input[end-2,:], inds = findmax(vals, dims=1)
+    input[end-1,:] = getindex.(inds, 1)
 end
 function findmax!(input::CuArray, idst::Int, idend::Int)
     rows, cols = size(input)
@@ -544,14 +549,15 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     # FORWARD PASS
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+         @timeit to "chain $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
     end
 
     # PROCESSING EACH YOLO OUTPUT
     #############################
-    outweights = []
+    outweights = Array{Float32}[]
     outnr = 0
     @views for out in yolo.out
+        @show out[:idx]
         outnr += 1
         w, h, a, bo, ba = out[:size]
         weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
@@ -582,13 +588,12 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
-        weights = reshape(weights, a+4, :) # reshape to attr, data
+        weightsout = reshape(PermutedDimsArray(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
 
         thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
-        findmax!(weights, 6, a)
-        push!(outweights, weights)
+        clipdetect!(weightsout, thresh) # set all detections below conf-thresh to zero
+        findmax!(weightsout, 6, a)
+        push!(outweights, weightsout)
     end
 
     # PROCESSING ALL PREDICTIONS
