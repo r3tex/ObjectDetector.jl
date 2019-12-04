@@ -397,6 +397,7 @@ mutable struct yolo <: AbstractModel
             out[i][:anchor] = anchor
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
+            out[i][:outweights] = gpu(Array{Float32}(undef, attributes+4, w*h*length(anchormask)*b))
         end
 
         return new(cfg, chainstack, W, out)
@@ -556,7 +557,6 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     # PROCESSING EACH YOLO OUTPUT
     #############################
-    outweights = Array{Float32}[]
     outnr = 0
     @views for out in yolo.out
         outnr += 1
@@ -589,17 +589,16 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        weights = reshape(permutedims(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
+        out[:outweights] = reshape(permutedims(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
         thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
-        findmax!(weights, 6, a)
-        push!(outweights, weights)
+        clipdetect!(out[:outweights], thresh) # set all detections below conf-thresh to zero
+        findmax!(out[:outweights], 6, a)
     end
 
     # PROCESSING ALL PREDICTIONS
     ############################
 
-    batchout = cpu(keepdetections(cat(outweights..., dims=2)))
+    batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2)))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
 
