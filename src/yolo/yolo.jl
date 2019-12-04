@@ -587,12 +587,11 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        weightsout = reshape(PermutedDimsArray(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
-
+        weights = reshape(permutedims(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
         thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(weightsout, thresh) # set all detections below conf-thresh to zero
-        findmax!(weightsout, 6, a)
-        push!(outweights, weightsout)
+        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
+        findmax!(weights, 6, a)
+        push!(outweights, weights)
     end
 
     # PROCESSING ALL PREDICTIONS
