@@ -557,7 +557,6 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     outweights = Array{Float32}[]
     outnr = 0
     @views for out in yolo.out
-        @show out[:idx]
         outnr += 1
         w, h, a, bo, ba = out[:size]
         weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
