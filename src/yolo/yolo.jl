@@ -2,8 +2,8 @@ module YOLO
 export getModelInputSize
 
 ### For debugging
-using TimerOutputs
-const to = TimerOutput()
+# using TimerOutputs
+# const to = TimerOutput()
 ###
 
 import ..AbstractModel, ..getArtifact, ..getModelInputSize
@@ -318,6 +318,7 @@ mutable struct yolo <: AbstractModel
         chainstack = [] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
+        push!(W, 0 => copy(testimgs[1]))
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -351,7 +352,7 @@ mutable struct yolo <: AbstractModel
         matrix_sizes_y = [size(v, 2) for (k,v) in W]
         cfg[:gridsize] = (minimum(matrix_sizes_x), minimum(matrix_sizes_y)) # the gridsize is determined by the smallest matrix
         cfg[:layer2out] = layer2out
-        push!(out, Dict(:idx => length(W)))
+        push!(out, Dict(:idx => length(W)-1))
 
         # PART 3 - THE OUTPUTS
         ######################
@@ -549,7 +550,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     # FORWARD PASS
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-         @timeit to "chain $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+         yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+         #@timeit to "chain $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1]) #for debugging
     end
 
     # PROCESSING EACH YOLO OUTPUT
