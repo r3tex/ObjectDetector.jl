@@ -544,7 +544,7 @@ overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
 function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
     @assert ndims(img) == 4 # width, height, channels, batchsize
-    yolo.W[0] = img
+    yolo.W[0] .= img
 
     # FORWARD PASS
     ##############
