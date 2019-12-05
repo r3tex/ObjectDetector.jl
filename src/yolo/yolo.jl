@@ -486,33 +486,9 @@ Reduces the size of array and only keeps detections over threshold
 function keepdetections(arr::Array)
     return arr[:, arr[5, :] .> 0]
 end
-function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
-    rows, cols = size(input)
-    bools = CuArrays.zeros(Int32, cols)
-    @cuda blocks=cols threads=rows kern_genbools(input, bools)
-    idxs = cumsum(bools)
-    n = count(bools)
-    output = CuArray{Float32, 2}(undef, rows, n)
-    @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
-    return output
-end
-function kern_genbools(input::CuDeviceArray, output::CuDeviceArray)
-    col = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    cols = gridDim().x
-    if col < cols && input[5, col] > Float32(0)
-        @inbounds output[col] = Int32(1)
-    end
-    return
-end
-@inline function kern_keepdetections(input::CuDeviceArray, output::CuDeviceArray,
-    bools::CuDeviceArray, idxs::CuDeviceArray)
-    col = blockIdx().x
-    row = threadIdx().x
-    if bools[col] == Int32(1)
-        idx = idxs[col]
-        @inbounds output[row, idx] = input[row, col]
-    end
-    return
+function keepdetections(x::CuArray; thresh=0.0)
+    n = size(x,1)
+    return reshape(x[repeat(view(x, 5, :) .> thresh, n)], n, :)
 end
 
 
