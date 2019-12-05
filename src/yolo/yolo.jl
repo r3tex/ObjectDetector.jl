@@ -22,6 +22,8 @@ CuFunctional = CUDAnative.functional()
 onegen = CuFunctional ? CuArrays.ones : ones
 zerogen = CuFunctional ? CuArrays.zeros : zeros
 
+using LazyArrays, FillArrays #for keepdetections_alt
+
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
 #########################################################
@@ -491,8 +493,24 @@ end
 function keepdetections(x::CuArray; thresh=0.0)
     n = size(x,1)
     return reshape(x[repeat(view(x, 5, :) .> thresh, n)], n, :)
+    #708.497 μs (610 allocations: 22.27 KiB)
 end
+function keepdetections_alt(x::CuArray; thresh=0.0)
+    nrows, ncols = size(x)
+    col_idxs = 1:ncols                                  #idx of every col
+    row_copy = Fill(true, 1, nrows)                     #trues of length nrows
+    rep_idx_2D = LazyArray(@~ col_idxs .* row_copy)'    #lazy copy of col_idxs to every row
+    # 24.238 ns (2 allocations: 64 bytes)
 
+    keep_cols = view(x, 5, :) .> thresh                #cols to keep
+    #8.726 μs (85 allocations: 3.63 KiB)
+
+    bool_idx = view(keep_cols,rep_idx_2D)             #logical index on elements to keep
+    #3.133 ms (87 allocations: 3.75 KiB)
+
+    return reshape(x[bool_idx], nrows, :)               #keep and reshape
+    #4.788 ms (572 allocations: 4.27 MiB)
+end
 
 """
     bboxiou(box1, box2)
