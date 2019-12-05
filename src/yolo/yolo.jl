@@ -127,8 +127,10 @@ We need a max-pool with a fixed stride of 1. Required given assymetric padding
 isn't supported by CuDNN
 """
 function maxpools1(x, kernel = 2)
-    x = cat(x, x[:, end:end, :, :], dims = 2)
-    x = cat(x, x[end:end, :, :, :], dims = 1)
+    lastcol = @view x[:, end:end, :, :]
+    x = cat(x, lastcol, dims = 2)
+    lastrow = @view x[end:end, :, :, :]
+    x = cat(x, lastrow, dims = 1)
     pdims = PoolDims(x, (kernel, kernel); stride = 1)
     return maxpool(x, pdims)
 end
@@ -484,7 +486,7 @@ end
 Reduces the size of array and only keeps detections over threshold
 """
 function keepdetections(arr::Array)
-    return arr[:, arr[5, :] .> 0]
+    return arr[:, view(arr, 5, :) .> 0]
 end
 function keepdetections(x::CuArray; thresh=0.0)
     n = size(x,1)
@@ -536,30 +538,31 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     outnr = 0
     @views for out in yolo.out
         outnr += 1
+        img_w = size(img, 1)
+        img_h = size(img, 2)
         w, h, a, bo, ba = out[:size]
         weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
         # adjust the predicted box coordinates into pixel values
-        weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
-        weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+        weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
+        weights[:, :, 5:end, :, :] .= σ.(weights[:, :, 5:end, :, :])
+        weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
         cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
         # Convert to image width & height scale (0.0-1.0)
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+        weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] ./ img_w #x
+        weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] ./ img_h #y
         if yolo.cfg[:yoloversion] == 2
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+            weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ img_w) * cellsize_x #w
+            weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) * cellsize_y #h
         else
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+            weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ img_w) #w
+            weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) #h
         end
 
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+        weights[:, :, 1:2, :, :] .= weights[:, :, 1:2, :, :] .- (weights[:, :, 3:4, :, :] .* 0.5) #x1. y1
+        weights[:, :, 3:4, :, :] .= weights[:, :, 1:1, :, :] .+ weights[:, :, 3:4, :, :] #x2, y2
+
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
@@ -568,24 +571,24 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         out[:outweights] = reshape(permutedims(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
         thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
         clipdetect!(out[:outweights], thresh) # set all detections below conf-thresh to zero
-        findmax!(out[:outweights], 6, a)
+        findmax!(out[:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
     end
 
     # PROCESSING ALL PREDICTIONS
     ############################
-
     batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2)))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
-
 
     classes = unique(batchout[end-1, :])
     output = Array{Array{Float32, 2},1}(undef, 0)
     for c in classes
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
-            iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
+            bbox1 = view(detection, 1:4, l)
+            bbox2 = @view detection[1:4, l+1:end]
+            iou = bboxiou(bbox1, bbox2)
             ds = findall(v -> v > overlapThresh, iou)
-            detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
+            detection = view(detection, :, setdiff(1:size(detection, 2), ds .+ l))
             l >= size(detection,2) && break
         end
         push!(output, detection)
