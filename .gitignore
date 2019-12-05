@@ -1,7 +1,7 @@
 ## Julia
 *.jl.*.cov
 *.jl.cov
-*.jl.mem
+*.mem
 .DS_Store
 /deps/*
 !/deps/build.jl

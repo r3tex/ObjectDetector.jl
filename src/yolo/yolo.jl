@@ -579,7 +579,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2)))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
-    classes = unique(batchout[end-1, :])
+    classrow = @view batchout[end-1, :]
+    classes = unique(classrow)
     output = Array{Array{Float32, 2},1}(undef, 0)
     for c in classes
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
