@@ -434,7 +434,7 @@ end
 function kern_clipdetect(input::CuDeviceArray, conf::Float32)
     idx = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
-    if idx < cols
+    if idx <= cols
         @inbounds input[5, idx] = ifelse(input[5, idx] > conf, input[5, idx], Float32(0.0))
     end
     return
@@ -522,9 +522,9 @@ function bboxiou(box1, box2)
     rectx2 = min.(b1x2, b2x2)
     recty2 = min.(b1y2, b2y2)
     z = zeros(length(rectx2))
-    interarea = max.(rectx2 .- rectx1 .+ 1, z) .* max.(recty2 .- recty1 .+ 1, z)
-    b1area = (b1x2 - b1x1 + 1) * (b1y2 - b1y1 + 1)
-    b2area = (b2x2 .- b2x1 .+ 1) .* (b2y2 .- b2y1 .+ 1)
+    interarea = max.(rectx2 .- rectx1, z) .* max.(recty2 .- recty1, z)
+    b1area = (b1x2 - b1x1) * (b1y2 - b1y1)
+    b2area = (b2x2 .- b2x1) .* (b2y2 .- b2y1)
     iou = interarea ./ (b1area .+ b2area .- interarea)
     return iou
 end
@@ -604,7 +604,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
             iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
-            ds = findall(v -> v > overlapThresh, iou)
+            ds = findall(v -> v >= overlapThresh, iou)
             detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
             l >= size(detection,2) && break
         end
