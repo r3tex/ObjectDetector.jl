@@ -434,7 +434,7 @@ end
 function kern_clipdetect(input::CuDeviceArray, conf::Float32)
     idx = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
-    if idx < cols
+    if idx <= cols
         @inbounds input[5, idx] = ifelse(input[5, idx] > conf, input[5, idx], Float32(0.0))
     end
     return
