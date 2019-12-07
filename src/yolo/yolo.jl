@@ -1,11 +1,6 @@
 module YOLO
 export getModelInputSize
 
-### For debugging
-# using TimerOutputs
-# const to = TimerOutput()
-###
-
 import ..AbstractModel, ..getArtifact, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -561,7 +556,6 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
          yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
-         #@timeit to "chain $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1]) #for debugging
     end
 
     # PROCESSING EACH YOLO OUTPUT
