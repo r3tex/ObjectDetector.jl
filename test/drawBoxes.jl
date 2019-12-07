@@ -4,7 +4,7 @@
     ### square model
     yolomod = YOLO.v3_tiny_COCO(w=416, h=416, silent=true)
     #Nonsquare low aspect ratio image
-    img = ones(Gray, 200, 100)
+    img = fill(Gray(1), 200, 100)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -15,7 +15,7 @@
     @test all(imgboxes[:,end] .== Gray(0))
 
     #Nonsquare high aspect ratio image
-    img = ones(Gray, 100, 200)
+    img = fill(Gray(1), 100, 200)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -26,7 +26,7 @@
     @test all(imgboxes[:,end] .== Gray(0))
 
     #Square image, square model
-    img = ones(Gray, 100, 100)
+    img = fill(Gray(1), 100, 100)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -39,7 +39,7 @@
     ### nonsquare low aspect ratio model
     yolomod = YOLO.v3_tiny_COCO(w=512, h=416, silent=true)
     #Square image
-    img = ones(Gray, 100, 100)
+    img = fill(Gray(1), 100, 100)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -50,7 +50,7 @@
     @test all(imgboxes[:,end] .== Gray(0))
 
     #nonsquare low aspect ratio image
-    img = ones(Gray, 200, 100)
+    img = fill(Gray(1), 200, 100)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -63,7 +63,7 @@
     ### nonsquare high aspect ratio model
     yolomod = YOLO.v3_tiny_COCO(w=416, h=512, silent=true)
     #Square image
-    img = ones(Gray, 100, 100)
+    img = fill(Gray(1), 100, 100)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
@@ -74,7 +74,7 @@
     @test all(imgboxes[:,end] .== Gray(0))
 
     #nonsquare low aspect ratio image
-    img = ones(Gray, 100, 200)
+    img = fill(Gray(1), 100, 200)
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepareImage(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
