@@ -604,7 +604,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
             iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
-            ds = findall(v -> v > overlapThresh, iou)
+            ds = findall(v -> v >= overlapThresh, iou)
             detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
             l >= size(detection,2) && break
         end
