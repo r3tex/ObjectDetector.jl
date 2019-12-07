@@ -17,8 +17,6 @@ CuFunctional = CUDAnative.functional()
 onegen = CuFunctional ? CuArrays.ones : ones
 zerogen = CuFunctional ? CuArrays.zeros : zeros
 
-using LazyArrays, FillArrays #for keepdetections_alt
-
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
 #########################################################
