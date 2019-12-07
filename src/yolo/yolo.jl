@@ -212,6 +212,7 @@ mutable struct yolo <: AbstractModel
     chain::Array{Any, 1}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
+    boolweights::Union{Nothing,AbstractArray{Bool}}  # Holds a bool array for keepdetections on cu
 
     # The constructor takes the official YOLO config files and weight files
     yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
@@ -360,6 +361,7 @@ mutable struct yolo <: AbstractModel
 
         # PART 3 - THE OUTPUTS
         ######################
+        cols = 0
         @views for i in eachindex(out)
             # we pre-process some linear matrix transformations and store the values for each YOLO output
             w, h, f, b = size(W[out[i][:idx]]) # width, height, filters, batchsize
@@ -402,9 +404,11 @@ mutable struct yolo <: AbstractModel
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
             out[i][:outweights] = gpu(Array{Float32}(undef, attributes+4, w*h*length(anchormask)*b))
-        end
 
-        return new(cfg, chainstack, W, out)
+            cols = cols + w*h*length(anchormask)*b
+        end
+        boolweights = CuFunctional ? gpu(Array{Bool}(undef, (5 + cfg[:output][1][:classes] + 4) * cols)) : nothing
+        return new(cfg, chainstack, W, out, boolweights)
     end
 end
 
@@ -487,30 +491,39 @@ end
 
 Reduces the size of array and only keeps detections over threshold
 """
-function keepdetections(arr::Array)
-    return arr[:, view(arr, 5, :) .> 0]
+function keepdetections(arr::Array, boolweights::Array{Bool}; thresh=0.0)
+    return arr[:, view(arr, 5, :) .> thresh]
 end
-function keepdetections(x::CuArray; thresh=0.0)
+function keepdetections(x::CuArray, boolweights::CuArray{Bool}; thresh=0.0)
     n = size(x,1)
-    return reshape(x[repeat(view(x, 5, :) .> thresh, n)], n, :)
-    #708.497 μs (610 allocations: 22.27 KiB)
+    boolweights .= repeat(view(x, 5, :) .> thresh, n)
+    return reshape(x[boolweights], n, :)
 end
-function keepdetections_alt(x::CuArray; thresh=0.0)
-    nrows, ncols = size(x)
-    col_idxs = 1:ncols                                  #idx of every col
-    row_copy = Fill(true, 1, nrows)                     #trues of length nrows
-    rep_idx_2D = LazyArray(@~ col_idxs .* row_copy)'    #lazy copy of col_idxs to every row
-    # 24.238 ns (2 allocations: 64 bytes)
-
-    keep_cols = view(x, 5, :) .> thresh                #cols to keep
-    #8.726 μs (85 allocations: 3.63 KiB)
-
-    bool_idx = view(keep_cols,rep_idx_2D)             #logical index on elements to keep
-    #3.133 ms (87 allocations: 3.75 KiB)
-
-    return reshape(x[bool_idx], nrows, :)               #keep and reshape
-    #4.788 ms (572 allocations: 4.27 MiB)
-end
+# function keepdetections(x::CuArray; thresh=0.0)
+#     nrows, ncols = size(x)
+#     col_idxs = 1:ncols                                  #idx of every col
+#     row_copy = Fill(true, 1, nrows)                     #trues of length nrows
+#     rep_idx_2D = LazyArray(@~ col_idxs .* row_copy)'    #lazy copy of col_idxs to every row
+#     # 24.238 ns (2 allocations: 64 bytes)
+#
+#     keep_cols = view(x, 5, :) .> thresh                #cols to keep
+#     #8.726 μs (85 allocations: 3.63 KiB)
+#
+#     bool_idx = view(keep_cols,rep_idx_2D)             #logical index on elements to keep
+#     #3.133 ms (87 allocations: 3.75 KiB)
+#
+#     return reshape(x[bool_idx], nrows, :)               #keep and reshape
+#     #4.788 ms (572 allocations: 4.27 MiB)
+# end
+# function keepdetections(x::CuArray; thresh=0.0)
+#     # INDEXES! Not working.
+#     nrows, ncols = size(x)
+#     row_copy = gpu(Fill(true, nrows))                     #trues of length nrows
+#     keep_cols = view(x, 5, :) .> thresh                 #cols to keep
+#     logical_index = LazyArray(@~ keep_cols' .* row_copy)
+#     @show logical_index
+#     return reshape(x[logical_index], nrows, :)               #keep and reshape
+# end
 
 """
     bboxiou(box1, box2)
@@ -594,7 +607,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     # PROCESSING ALL PREDICTIONS
     ############################
-    batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2)))
+    batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2), yolo.boolweights))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
     classrow = @view batchout[end-1, :]
