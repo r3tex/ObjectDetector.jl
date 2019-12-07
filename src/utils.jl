@@ -28,8 +28,8 @@ createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 Draw boxes on image for each BBOX result.
 """
-drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
-function drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results; transpose=true)
+drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
+function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = model.cfg[:width] / model.cfg[:height]
