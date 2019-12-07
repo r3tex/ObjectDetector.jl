@@ -522,9 +522,9 @@ function bboxiou(box1, box2)
     rectx2 = min.(b1x2, b2x2)
     recty2 = min.(b1y2, b2y2)
     z = zeros(length(rectx2))
-    interarea = max.(rectx2 .- rectx1 .+ 1, z) .* max.(recty2 .- recty1 .+ 1, z)
-    b1area = (b1x2 - b1x1 + 1) * (b1y2 - b1y1 + 1)
-    b2area = (b2x2 .- b2x1 .+ 1) .* (b2y2 .- b2y1 .+ 1)
+    interarea = max.(rectx2 .- rectx1, z) .* max.(recty2 .- recty1, z)
+    b1area = (b1x2 - b1x1) * (b1y2 - b1y1)
+    b2area = (b2x2 .- b2x1) .* (b2y2 .- b2y1)
     iou = interarea ./ (b1area .+ b2area .- interarea)
     return iou
 end
