@@ -40,6 +40,7 @@ for (k, pretrained) in pairs(pretrained_list)
 
             val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
             @test size(res,2) > 0
+            @test size(res,2) < 5
             table[k, 4] = true
             table[k, 5] = round(t_run, digits=4)
             table[k, 6] = size(res, 2)
@@ -52,6 +53,7 @@ for (k, pretrained) in pairs(pretrained_list)
 
         end
     end
+    yolomod = nothing
     GC.gc()
 end
 pretty_table(table, header)
