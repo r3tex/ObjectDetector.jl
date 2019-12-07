@@ -560,17 +560,15 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     # PROCESSING EACH YOLO OUTPUT
     #############################
-    outnr = 0
-    @views for out in yolo.out
-        outnr += 1
+    @views for outnr in 1:length(yolo.out)
         img_w = size(img, 1)
         img_h = size(img, 2)
-        w, h, a, bo, ba = out[:size]
-        weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
+        w, h, a, bo, ba = yolo.out[outnr][:size]
+        weights = reshape(yolo.W[yolo.out[outnr][:idx]], w, h, a, bo, ba)
         # adjust the predicted box coordinates into pixel values
-        weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
+        weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) + yolo.out[outnr][:offset]) .* yolo.out[outnr][:scale]
         weights[:, :, 5:end, :, :] .= σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+        weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* yolo.out[outnr][:anchor]
 
         cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
@@ -585,18 +583,19 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
             weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) #h
         end
 
-        weights[:, :, 1:2, :, :] .= weights[:, :, 1:2, :, :] .- (weights[:, :, 3:4, :, :] .* 0.5) #x1. y1
-        weights[:, :, 3:4, :, :] .= weights[:, :, 1:1, :, :] .+ weights[:, :, 3:4, :, :] #x2, y2
-
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
+        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        out[:outweights] = reshape(permutedims(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
-        thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(out[:outweights], thresh) # set all detections below conf-thresh to zero
-        findmax!(out[:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
+        yolo.out[outnr][:outweights] .= reshape(PermutedDimsArray(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
+        thresh = detectThresh == nothing ? Float32(yolo.out[outnr][:truth]) : Float32(detectThresh)
+        clipdetect!(yolo.out[outnr][:outweights], thresh) # set all detections below conf-thresh to zero
+        findmax!(yolo.out[outnr][:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
     end
 
     # PROCESSING ALL PREDICTIONS
