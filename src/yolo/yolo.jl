@@ -619,8 +619,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
             bbox1 = view(detection, 1:4, l)
             bbox2 = @view detection[1:4, l+1:end]
             iou = bboxiou(bbox1, bbox2)
-            ds = findall(v -> v > overlapThresh, iou)
-            detection = view(detection, :, setdiff(1:size(detection, 2), ds .+ l))
+            ds = findall(v -> v >= overlapThresh, iou)
+            detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
             l >= size(detection,2) && break
         end
         push!(output, detection)
