@@ -205,7 +205,7 @@ mutable struct yolo <: AbstractModel
     chain::Array{Any, 1}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
-    boolweights::Union{Nothing,AbstractArray{Bool}}  # Holds a bool array for keepdetections on cu
+    boolweights::Union{Nothing,CuArray{Bool}}  # Holds a bool array for keepdetections on cu
 
     # The constructor takes the official YOLO config files and weight files
     yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
