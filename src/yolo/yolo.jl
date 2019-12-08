@@ -316,7 +316,7 @@ mutable struct yolo <: AbstractModel
         chainstack = [] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
-        push!(W, 0 => copy(testimgs[1]))
+        push!(W, 0 => deepcopy(testimgs[1]))
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -370,21 +370,21 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = zerogen(Float32, w, h, 2, length(anchormask), b)
+            offset = reshape(zerogen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = onegen(Float32, w, h, 2, length(anchormask), b)
+            scale = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = onegen(Float32, w, h, 2, length(anchormask), b)
+            anchor = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
@@ -396,11 +396,12 @@ mutable struct yolo <: AbstractModel
             out[i][:anchor] = anchor
             out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
-            out[i][:outweights] = gpu(Array{Float32}(undef, attributes+4, w*h*length(anchormask)*b))
+            #out[i][:outweights] = gpu(Array{Float32}(undef, attributes+4, w*h*length(anchormask)*b))
+            out[i][:outweights] = zerogen(attributes+4, w*h*length(anchormask)*b)
 
-            cols = cols + w*h*length(anchormask)*b
+            cols = cols + (w*h*length(anchormask)*b)
         end
-        boolweights = CuFunctional ? gpu(Array{Bool}(undef, (5 + cfg[:output][1][:classes] + 4) * cols)) : nothing
+        boolweights = CuFunctional ? zerogen(Bool, (5 + cfg[:output][1][:classes] + 4) * cols) : nothing
         return new(cfg, chainstack, W, out, boolweights)
     end
 end
@@ -564,21 +565,21 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         w, h, a, bo, ba = yolo.out[outnr][:size]
         weights = reshape(yolo.W[yolo.out[outnr][:idx]], w, h, a, bo, ba)
         # adjust the predicted box coordinates into pixel values
-        weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) + yolo.out[outnr][:offset]) .* yolo.out[outnr][:scale]
-        weights[:, :, 5:end, :, :] .= σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* yolo.out[outnr][:anchor]
+        weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + yolo.out[outnr][:offset]) .* yolo.out[outnr][:scale]
+        weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+        weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* yolo.out[outnr][:anchor]
 
         cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
         # Convert to image width & height scale (0.0-1.0)
-        weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] ./ img_w #x
-        weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] ./ img_h #y
+        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ img_w #x
+        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ img_h #y
         if yolo.cfg[:yoloversion] == 2
-            weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ img_w) * cellsize_x #w
-            weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) * cellsize_y #h
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ img_w) * cellsize_x #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ img_h) * cellsize_y #h
         else
-            weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ img_w) #w
-            weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) #h
+            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ img_w) #w
+            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ img_h) #h
         end
 
         weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
@@ -590,15 +591,19 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
+
         yolo.out[outnr][:outweights] .= reshape(PermutedDimsArray(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
+        @show yolo.out[outnr][:outweights][5, yolo.out[outnr][:outweights][5,:] .> 0]
+
         thresh = detectThresh == nothing ? Float32(yolo.out[outnr][:truth]) : Float32(detectThresh)
         clipdetect!(yolo.out[outnr][:outweights], thresh) # set all detections below conf-thresh to zero
+        @show yolo.out[outnr][:outweights][5, yolo.out[outnr][:outweights][5,:] .> 0]
         findmax!(yolo.out[outnr][:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
     end
 
     # PROCESSING ALL PREDICTIONS
     ############################
-    batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2), yolo.boolweights))
+    batchout = cpu(keepdetections(reduce(hcat, map(x->x[:outweights], yolo.out)), yolo.boolweights))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
     classrow = @view batchout[end-1, :]
