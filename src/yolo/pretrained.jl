@@ -5,7 +5,7 @@ end
 v2_608_COCO(;batch=1, silent=false, cfgchanges=nothing) = v2_COCO(w=608, h=608, batch=batch, silent=silent, cfgchanges=cfgchanges)
 
 ## YOLOV2-tiny
-function v2_tiny_COCO(;batch=1, silent=false, cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)], w=416, h=416)
+function v2_tiny_COCO(;batch=1, silent=false, w=416, h=416, cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)])
     yolo(joinpath(models_dir,"yolov2-tiny.cfg"), getArtifact("yolov2-tiny-COCO"), batch, silent=silent, cfgchanges=cfgchanges)
 end
 v2_tiny_416_COCO(;batch=1, silent=false, cfgchanges=nothing) = v2_tiny_COCO(w=416, h=416, batch=batch, silent=silent, cfgchanges=cfgchanges)
