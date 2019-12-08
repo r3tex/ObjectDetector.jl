@@ -403,7 +403,7 @@ mutable struct yolo <: AbstractModel
 
             cols = cols + w*h*length(anchormask)*b
         end
-        boolweights = CuFunctional ? gpu(Array{Bool}(undef, (5 + cfg[:output][1][:classes] + 4) * cols)) : nothing
+        boolweights = CuFunctional ? gpu(Array{Bool}(undef, (5 + cfg[:output][1][:classes] + 4), cols)) : nothing
         return new(cfg, chainstack, W, out, boolweights)
     end
 end
@@ -487,38 +487,41 @@ end
 
 Reduces the size of array and only keeps detections over threshold
 """
-function keepdetections(arr::Array, boolweights::Array{Bool}; thresh=0.0)
+function keepdetections(arr::AbstractArray, boolweights::Nothing; thresh=0.0)
     return arr[:, view(arr, 5, :) .> thresh]
 end
 function keepdetections(x::CuArray, boolweights::CuArray{Bool}; thresh=0.0)
-    n = size(x,1)
-    boolweights .= repeat(view(x, 5, :) .> thresh, n)
-    return reshape(x[boolweights], n, :)
+    colselects = view(x, 5, :) .> thresh
+    boolweights .= repeat(colselects', outer=[size(x, 1), 1])
+    return x[boolweights]
 end
-# function keepdetections(x::CuArray; thresh=0.0)
-#     nrows, ncols = size(x)
-#     col_idxs = 1:ncols                                  #idx of every col
-#     row_copy = Fill(true, 1, nrows)                     #trues of length nrows
-#     rep_idx_2D = LazyArray(@~ col_idxs .* row_copy)'    #lazy copy of col_idxs to every row
-#     # 24.238 ns (2 allocations: 64 bytes)
-#
-#     keep_cols = view(x, 5, :) .> thresh                #cols to keep
-#     #8.726 μs (85 allocations: 3.63 KiB)
-#
-#     bool_idx = view(keep_cols,rep_idx_2D)             #logical index on elements to keep
-#     #3.133 ms (87 allocations: 3.75 KiB)
-#
-#     return reshape(x[bool_idx], nrows, :)               #keep and reshape
-#     #4.788 ms (572 allocations: 4.27 MiB)
+# function keepdetections(input::CuArray, boolweights::CuArray{Bool}) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
+#     rows, cols = size(input)
+#     bools = CuArrays.zeros(Int32, cols)
+#     @cuda blocks=cols threads=rows kern_genbools(input, bools)
+#     idxs = cumsum(bools)
+#     n = count(bools)
+#     output = CuArray{Float32, 2}(undef, rows, n)
+#     @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
+#     return output
 # end
-# function keepdetections(x::CuArray; thresh=0.0)
-#     # INDEXES! Not working.
-#     nrows, ncols = size(x)
-#     row_copy = gpu(Fill(true, nrows))                     #trues of length nrows
-#     keep_cols = view(x, 5, :) .> thresh                 #cols to keep
-#     logical_index = LazyArray(@~ keep_cols' .* row_copy)
-#     @show logical_index
-#     return reshape(x[logical_index], nrows, :)               #keep and reshape
+# function kern_genbools(input::CuDeviceArray, output::CuDeviceArray)
+#     col = (blockIdx().x-1) * blockDim().x + threadIdx().x
+#     cols = gridDim().x
+#     if col < cols && input[5, col] > Float32(0)
+#         @inbounds output[col] = Int32(1)
+#     end
+#     return
+# end
+# @inline function kern_keepdetections(input::CuDeviceArray, output::CuDeviceArray,
+#     bools::CuDeviceArray, idxs::CuDeviceArray)
+#     col = blockIdx().x
+#     row = threadIdx().x
+#     if bools[col] == Int32(1)
+#         idx = idxs[col]
+#         @inbounds output[row, idx] = input[row, col]
+#     end
+#     return
 # end
 
 """
@@ -601,7 +604,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     # PROCESSING ALL PREDICTIONS
     ############################
-    batchout = cpu(keepdetections(cat(map(x->x[:outweights], yolo.out)..., dims=2), yolo.boolweights))
+    batchout = cpu(keepdetections(hcat(map(x->x[:outweights], yolo.out)...), yolo.boolweights))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
     classrow = @view batchout[end-1, :]
