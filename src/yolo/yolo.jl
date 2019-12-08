@@ -491,9 +491,10 @@ function keepdetections(arr::AbstractArray, boolweights::Nothing; thresh=0.0)
     return arr[:, view(arr, 5, :) .> thresh]
 end
 function keepdetections(x::CuArray, boolweights::CuArray{Bool}; thresh=0.0)
+    n = size(x, 1)
     colselects = view(x, 5, :) .> thresh
-    boolweights .= repeat(colselects', outer=[size(x, 1), 1])
-    return x[boolweights]
+    boolweights .= repeat(colselects', outer=[n, 1])
+    return reshape(x[boolweights], n, :)
 end
 # function keepdetections(input::CuArray, boolweights::CuArray{Bool}) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
 #     rows, cols = size(input)
@@ -612,7 +613,6 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     ############################
     batchout = cpu(keepdetections(hcat(map(x->x[:outweights], yolo.out)...), yolo.boolweights))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
-
     #7.338 ms (15621 allocations: 1.36 MiB)
     #0.013208 seconds (15.63 k CPU allocations: 1.364 MiB) (64 GPU allocations: 249.066 MiB, 0.73% gc time)
 

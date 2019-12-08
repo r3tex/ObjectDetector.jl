@@ -1,5 +1,5 @@
 dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
-oThresh = 0.9 #Overlap Threshold (maximum acceptable IoU)
+oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 @info "Testing all models with detectThresh = $dThresh, overlapThresh = $oThresh"
 
 testimages = ["dog-cycle-car_nonsquare","dog-cycle-car"]
