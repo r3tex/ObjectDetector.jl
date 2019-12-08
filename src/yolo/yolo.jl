@@ -562,6 +562,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
          yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
     end
 
+    #1.070 ms (4337 allocations: 203.05 KiB)
+    #0.011218 seconds (4.34 k CPU allocations: 203.172 KiB) (51 GPU allocations: 247.589 MiB, 0.66% gc time)
     # PROCESSING EACH YOLO OUTPUT
     #############################
     @views for outnr in 1:length(yolo.out)
@@ -604,6 +606,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         findmax!(yolo.out[outnr][:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
     end
 
+    # 1.742 ms (6368 allocations: 346.41 KiB)
+    # 0.009812 seconds (6.38 k CPU allocations: 351.094 KiB) (59 GPU allocations: 248.298 MiB, 0.84% gc time)
     # PROCESSING ALL PREDICTIONS
     ############################
     batchout = cpu(keepdetections(hcat(map(x->x[:outweights], yolo.out)...), yolo.boolweights))
