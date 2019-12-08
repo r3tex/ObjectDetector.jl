@@ -10,8 +10,11 @@ import Flux.gpu
 using CuArrays
 using CUDAnative
 
-CuArrays.allowscalar(false)
 CuFunctional = CUDAnative.functional()
+
+function __init__()
+    CuArrays.allowscalar(false)
+end
 
 # Use different generators depending on presence of GPU
 onegen = CuFunctional ? CuArrays.ones : ones
