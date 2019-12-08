@@ -587,16 +587,18 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
             weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ img_h) #h
         end
 
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+        weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
+        weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
+        weights[:, :, 3, :, :] .= weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+        weights[:, :, 4, :, :] .= weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
         weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
+
         yolo.out[outnr][:outweights] .= reshape(PermutedDimsArray(weights, [3, 1, 2, 4, 5]), a+4, :) # place attributes first, then reshape to attr, data
+
         thresh = detectThresh == nothing ? Float32(yolo.out[outnr][:truth]) : Float32(detectThresh)
         clipdetect!(yolo.out[outnr][:outweights], thresh) # set all detections below conf-thresh to zero
         findmax!(yolo.out[outnr][:outweights], 6, a) #Findmax, get the class with highest confidence and class number out.
@@ -607,13 +609,15 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     batchout = cpu(keepdetections(hcat(map(x->x[:outweights], yolo.out)...), yolo.boolweights))
     size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
 
-    classrow = @view batchout[end-1, :]
-    classes = unique(classrow)
+    #7.338 ms (15621 allocations: 1.36 MiB)
+    #0.013208 seconds (15.63 k CPU allocations: 1.364 MiB) (64 GPU allocations: 249.066 MiB, 0.73% gc time)
+
+    classes = unique(batchout[end-1, :])
     output = Array{Array{Float32, 2},1}(undef, 0)
     for c in classes
         detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
         for l in 1:size(detection, 2)
-            bbox1 = view(detection, 1:4, l)
+            bbox1 = @view detection[1:4, l]
             bbox2 = @view detection[1:4, l+1:end]
             iou = bboxiou(bbox1, bbox2)
             ds = findall(v -> v >= overlapThresh, iou)
