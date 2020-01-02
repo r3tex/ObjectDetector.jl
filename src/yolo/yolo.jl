@@ -1,7 +1,8 @@
 module YOLO
 export getModelInputSize
 
-import ..AbstractModel, ..getArtifact, ..getModelInputSize
+import ..AbstractModel, ..getModelInputSize
+#import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
 
