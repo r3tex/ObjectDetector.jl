@@ -1,7 +1,7 @@
 name = "ObjectDetector"
 uuid = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
 authors = ["Robert Luciani"]
-version = "0.1.4"
+version = "0.1.5"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
@@ -17,7 +17,7 @@ PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 
 [compat]
 BenchmarkTools = "0.4"
-CUDAnative = "2.5"
+CUDAnative = "2.8"
 CuArrays = "1.5"
 Flux = "0.10"
 ImageCore = "0.8"
