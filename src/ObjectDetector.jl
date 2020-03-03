@@ -29,7 +29,7 @@ import .YOLO
 
 include("utils.jl")
 
-# include("../deps/SnoopCompile/precompile/precompile_MatLang.jl")
+# include("../deps/SnoopCompile/precompile/precompile_ObjectDetector.jl")
 # _precompile_()
 
 end #module
