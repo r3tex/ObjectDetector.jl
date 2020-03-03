@@ -5,6 +5,7 @@
 .DS_Store
 /deps/*
 !/deps/build.jl
+!/deps/SnoopCompile
 *.weights
 Manifest.toml
 *.so
