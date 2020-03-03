@@ -243,7 +243,7 @@ mutable struct yolo <: AbstractModel
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
                 push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0)))
+                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, nothing)))
                 push!(stack, x -> act.(x))
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
