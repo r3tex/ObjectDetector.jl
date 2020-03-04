@@ -244,28 +244,28 @@ mutable struct yolo <: AbstractModel
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
                 push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, nothing)))
-                push!(stack, x -> act.(x))
+                push!(stack, let; _act(x) = act.(x) end)
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
                 !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
             elseif blocktype == :upsample
                 stride = block[:stride]
-                push!(fn, x -> upsample(x, stride)) # upsample using Kronecker tensor product
+                push!(fn, let; _upsample(x) = upsample(x, stride) end) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :reorg
                 stride = block[:stride]
-                push!(fn, x -> reorg(x, stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
+                push!(fn, let; _reorg(x) = reorg(x, stride) end) # reorg (reshape to (w/stride, h/stride, c*stride^2))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
                 if stride==1 && CuFunctional
-                    push!(fn, x -> maxpools1(x, siz)) #Asymmetric padding not supported by CuDNN
+                    push!(fn, let; _maxpools1(x) = maxpools1(x, siz) end) #Asymmetric padding not supported by CuDNN
                 else
-                    push!(fn, x -> maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))))
+                    push!(fn, let; _maxpool(x) = maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))) end)
                 end
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
@@ -328,11 +328,11 @@ mutable struct yolo <: AbstractModel
                 if typeof(fn[j]) <: Tuple
                     arrayidx = layer2out[fn[j][1]]
                     if fn[j][2] == :route
-                        fn[j] = x -> identity(W[arrayidx])
+                        fn[j] = let; _route(x) = identity(W[arrayidx]) end
                     elseif fn[j][2] == :add
-                        fn[j] = x -> x + W[arrayidx]
+                        fn[j] = let; _add(x) = x + W[arrayidx] end
                     elseif fn[j][2] == :cat
-                        fn[j] = x -> cat(x, W[arrayidx], dims = 3)
+                        fn[j] = let; _cat(x) = cat(x, W[arrayidx], dims = 3) end
                     end
                 end
             end
