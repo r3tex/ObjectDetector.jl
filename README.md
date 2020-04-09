@@ -52,7 +52,7 @@ dimension is an integer multiple of the filter size of the first conv layer (typ
 imgBoxes = drawBoxes(img, yolomod, padding, res)
 save("result.png", imgBoxes)
 ```
-![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.jpg)
+![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.png)
 
 
 ## Pretrained Models
@@ -145,19 +145,19 @@ A 2019 Macbook Pro (CPU-only, no CUDA)
 All run with `detectThresh = 0.5`, `overlapThresh = 0.5`
 
 ### YOLO.v2_tiny_416_COCO
-![v2_tiny_416_COCO](test/results/dog-cycle-car/v2_tiny_416_COCO.jpg)
+![v2_tiny_416_COCO](test/results/dog-cycle-car/v2_tiny_416_COCO.png)
 
 ### YOLO.v3_tiny_416_COCO
-![v3_tiny_416_COCO](test/results/dog-cycle-car/v3_tiny_416_COCO.jpg)
+![v3_tiny_416_COCO](test/results/dog-cycle-car/v3_tiny_416_COCO.png)
 
 ### YOLO.v3_320_COCO
-![v3_320_COCO](test/results/dog-cycle-car/v3_320_COCO.jpg)
+![v3_320_COCO](test/results/dog-cycle-car/v3_320_COCO.png)
 
 ### YOLO.v3_416_COCO
-![v3_416_COCO](test/results/dog-cycle-car/v3_416_COCO.jpg)
+![v3_416_COCO](test/results/dog-cycle-car/v3_416_COCO.png)
 
 ### YOLO.v3_608_COCO
-![v3_608_COCO](test/results/dog-cycle-car/v3_608_COCO.jpg)
+![v3_608_COCO](test/results/dog-cycle-car/v3_608_COCO.png)
 
 
 ## Package Compilation

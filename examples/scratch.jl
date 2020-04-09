@@ -30,7 +30,7 @@ batch[:,:,:,1], padding = prepareImage(img, yolomod)
 res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
 
 imgboxes = drawBoxes(img, yolomod, padding, res)
-save(joinpath(@__DIR__, "test.jpg"), imgboxes)
+save(joinpath(@__DIR__, "test.png"), imgboxes)
 all(imgboxes[1,:] .== Gray(0))
 all(imgboxes[:,1] .== Gray(0))
 all(imgboxes[end,:] .== Gray(0))
