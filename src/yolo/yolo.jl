@@ -45,8 +45,8 @@ function cfgsplit(dat::String)
     name, values = split(dat, '=')
     values = split(values, ',')
     k = Symbol(strip(name))
-    v = length(values) == 1 ? cfgparse(values[1]) : [cfgparse(v) for v in values]
-    return k::Symbol => v::Any
+    v = length(values) == 1 ? cfgparse(values[1]) : cfgparse.(values)
+    return (k => v)::Pair{Symbol,<:Any}
 end
 
 """
@@ -82,7 +82,7 @@ function readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool)
         bv = reinterpret(Float32, read(bytes, fl*4))
         cb = zeros(Float32, fl)
         cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
-        cw = Float32.(flip(cw))
+        cw = Float32.(flip(cw))        
         return cw, cb, bb, bw, bm, bv
     else
         cb = reinterpret(Float32, read(bytes, fl*4))

@@ -46,7 +46,7 @@ for (k, pretrained) in pairs(pretrained_list)
             @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
 
             imgBoxes = drawBoxes(IMG, yolomod, padding, res)
-            resfile = joinpath(resultsdir,"$(modelname).jpg")
+            resfile = joinpath(resultsdir,"$(modelname).png")
             save(resfile, imgBoxes)
             @info "$modelname: View result: $resfile"
 
