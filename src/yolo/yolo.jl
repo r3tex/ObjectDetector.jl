@@ -124,9 +124,9 @@ We need a max-pool with a fixed stride of 1. Required given assymetric padding
 isn't supported by CuDNN
 """
 function maxpools1(x, kernel = 2)
-    slice1 = @views x[:, end:end, :, :]
-    slice2 = @views x[end:end, :, :, :]
+    slice1 = @view x[:, end:end, :, :]
     x = cat(x, slice1, dims = 2)
+    slice2 = @view x[end:end, :, :, :]
     x = cat(x, slice2, dims = 1)
     pdims = PoolDims(x, (kernel, kernel); stride = 1)
     return maxpool(x, pdims)
