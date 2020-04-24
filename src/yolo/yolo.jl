@@ -204,9 +204,9 @@ end
 ########################################################
 mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
-    chain::Array{Any, 1}                     # This holds chains of weights and functions
+    chain::Vector{Flux.Chain}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
-    out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
+    out::Vector{Dict{Symbol, Union{Int, Float32, AbstractArray{Float32}, Vector{Int}}}}         # This holds values and arrays needed for inference
 
     # The constructor takes the official YOLO config files and weight files
     yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
@@ -389,12 +389,12 @@ mutable struct yolo <: AbstractModel
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
             end
 
-            out[i][:size] = (w, h, attributes, length(anchormask), b)
+            out[i][:size] = [w, h, attributes, length(anchormask), b]
             out[i][:offset] = offset
             out[i][:scale] = scale
             out[i][:anchor] = anchor
-            out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
-            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
+            out[i][:truth] = Float32(get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0))) # for object being detected (at all). Called thresh in v2
+            out[i][:ignore] = Float32(get(cfg[:output][i], :ignore_thresh, 0.3)) # for ignoring detections of same object (overlapping)
         end
 
         return new(cfg, chainstack, W, out)
