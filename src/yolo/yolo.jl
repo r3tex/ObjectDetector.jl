@@ -17,6 +17,7 @@ CuFunctional = CUDAnative.functional()
 # Use different generators depending on presence of GPU
 onegen = CuFunctional ? CuArrays.ones : ones
 zerogen = CuFunctional ? CuArrays.zeros : zeros
+_exp = CuFunctional ? CUDAnative.exp : Base.exp
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -559,7 +560,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         # adjust the predicted box coordinates into pixel values
         weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
         weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+        weights[:, :, 3:4, :, :] = _exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
         cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
