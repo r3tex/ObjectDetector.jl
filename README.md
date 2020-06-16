@@ -43,11 +43,11 @@ permuted before being passed to batch. Otherwise features may not be detected du
 being rotated 90º. The function `prepareImage()` includes this conversion automatically.
 
 Also, non-square models can be loaded, but care should be taken to ensure that each
-dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32)
+dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32).
 
 
 
-### Visualzing the result
+### Visualizing the result
 ```julia
 imgBoxes = drawBoxes(img, yolomod, padding, res)
 save("result.png", imgBoxes)
@@ -78,7 +78,7 @@ yolomod = YOLO.v3_COCO(silent=false, cfgchanges=[(:net, 1, :width, 512), (:net, 
 `(layer symbol, ith layer that matches given symbol, field symbol, value)`
 Note that if `cfgchanges` is provided, optional `h` and `w` args are ignored.
 
-Also, convenient sized models can be loaded via
+Also, convenient sized models can be loaded via:
 ```julia
 YOLO.v2_608_COCO()
 YOLO.v2_tiny_416_COCO()
@@ -103,7 +103,7 @@ function v3_COCO(;batch=1, silent=false, cfgchanges=nothing, w=416, h=416)
 end
 ```
 
-The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3)
+The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3).
 
 ## Benchmarking
 
@@ -127,7 +127,7 @@ julia> ObjectDetector.benchmark()
 └──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
 ```
 
-A 2019 Macbook Pro (CPU-only, no CUDA)
+A 2019 Macbook Pro (CPU-only, no CUDA):
 ```
 ┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
 │            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
@@ -165,7 +165,7 @@ All run with `detectThresh = 0.5`, `overlapThresh = 0.5`
 If initial load times are critical, the package can be compiled and loaded as a
 sysimage, such that initial load time reduces to ~4 seconds, and loading of the
 first model also takes ~4 seconds (as opposed to current performance on 1.3.0 of
-~20 seconds for package load, and ~20 seconds for first model load)
+~20 seconds for package load, and ~20 seconds for first model load).
 
 See [dev/compilation/compiler.jl](dev/compilation/compiler.jl) for instructions.
 
