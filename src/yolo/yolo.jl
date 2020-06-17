@@ -197,8 +197,8 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     height = cfgvec[1][2][:height]
     firstconvfilters = cfgvec[2][2][:filters]
 
-    @assert (mod(width, firstconvfilters) == 0) "Model width $width not compatible with first conv size of filters=$firstconvfilters. Width should be an integer multiple of $firstconvfilters"
-    @assert (mod(height, firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of $firstconvfilters"
+    @assert (mod(width, 2 * firstconvfilters) == 0) "Model width $width not compatible with first conv size of filters=$firstconvfilters. Width should be an integer multiple of 2 * $firstconvfilters ($(2*firstconvfilters))"
+    @assert (mod(height, 2 * firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of 2 * $firstconvfilters ($(2*firstconvfilters))"
     return true
 end
 
