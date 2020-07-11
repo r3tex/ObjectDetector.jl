@@ -9,7 +9,6 @@ export gpu, cpu
 using Pkg.Artifacts
 #getArtifact(name::String) = joinpath(@artifact_str(name), "$(name).weights") #Broken in 1.3.1 https://github.com/JuliaLang/Pkg.jl/issues/1579
 
-
 using ImageFiltering
 using ImageTransformations
 using ImageCore
