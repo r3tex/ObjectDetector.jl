@@ -8,11 +8,10 @@ const models_dir = joinpath(@__DIR__, "models")
 
 using Flux
 import Flux.gpu
-using CuArrays
-using CUDAnative
+using Flux.CUDA
 
-CuArrays.allowscalar(false)
-CuFunctional = CUDAnative.functional()
+CUDA.allowscalar(false)
+CuFunctional = CUDA.functional()
 
 # Use different generators depending on presence of GPU
 onegen = CuFunctional ? CuArrays.ones : ones
