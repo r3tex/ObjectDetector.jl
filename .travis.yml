@@ -28,4 +28,5 @@ matrix:
     #   arch: arm64
 notifications:
   email: false
+script: travis_wait julia -e 'using Pkg; Pkg.build(); Pkg.test(coverage=true)'
 after_success: julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
