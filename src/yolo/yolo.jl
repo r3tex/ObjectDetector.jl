@@ -10,12 +10,12 @@ using Flux
 import Flux.gpu
 using Flux.CUDA
 
-CUDA.allowscalar(false)
-const CuFunctional = CUDA.functional()
+const CU_FUNCTIONAL = Ref{Bool}(false)
 
-# Use different generators depending on presence of GPU
-const onegen = CuFunctional ? CUDA.ones : ones
-const zerogen = CuFunctional ? CUDA.zeros : zeros
+function __init__()
+    CUDA.allowscalar(false)
+    CU_FUNCTIONAL[] = CUDA.functional()
+end
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -136,7 +136,11 @@ Optimized upsampling without indexing for better GPU performance
 function upsample(a, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    b = onegen(Float32, stride, 1, stride, 1, 1, 1)
+    if CU_FUNCTIONAL[]
+        b = CuArrays.ones(Float32, stride, 1, stride, 1, 1, 1)
+    else
+        b = ones(Float32, stride, 1, stride, 1, 1, 1)
+    end
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -261,7 +265,7 @@ mutable struct yolo <: AbstractModel
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                if stride==1 && CuFunctional
+                if stride==1 && CU_FUNCTIONAL[]
                     push!(fn, let; _maxpools1(x) = maxpools1(x, siz) end) #Asymmetric padding not supported by CuDNN
                 else
                     push!(fn, let; _maxpool(x) = maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))) end)
@@ -365,21 +369,34 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = reshape(zerogen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            if CU_FUNCTIONAL[]
+                offset = reshape(CUDA.zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            else
+                offset = reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            end
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            if CU_FUNCTIONAL[]
+                scale = reshape(CuArrays.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            else
+                scale = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            end
+            
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = reshape(onegen(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            if CU_FUNCTIONAL[]
+                anchor = reshape(CuArrays.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            else
+                anchor = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+            end
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
@@ -579,7 +596,11 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
-        weights = cat(weights, zerogen(Float32, w, h, 4, bo, ba), dims = 3)
+        if CU_FUNCTIONAL[]
+            weights = cat(weights, CUDA.zeros(Float32, w, h, 4, bo, ba), dims = 3)
+        else
+            weights = cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
+        end
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
         weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
@@ -595,7 +616,13 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     ############################
 
     batchout = cpu(keepdetections(cat(outweights..., dims=2)))
-    size(batchout, 1) == 0 && return zerogen(Float32, 1, 1)
+    if size(batchout, 1) == 0  
+        if CU_FUNCTIONAL[]
+            return CUDA.zeros(Float32, 1, 1)
+        else
+            return zeros(Float32, 1, 1)
+        end
+    end
 
 
     classes = unique(batchout[end-1, :])
