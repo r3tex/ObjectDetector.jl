@@ -11,11 +11,11 @@ import Flux.gpu
 using Flux.CUDA
 
 CUDA.allowscalar(false)
-CuFunctional = CUDA.functional()
+const CuFunctional = CUDA.functional()
 
 # Use different generators depending on presence of GPU
-onegen = CuFunctional ? CuArrays.ones : ones
-zerogen = CuFunctional ? CuArrays.zeros : zeros
+const onegen = CuFunctional ? CUDA.ones : ones
+const zerogen = CuFunctional ? CUDA.zeros : zeros
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -481,7 +481,7 @@ function keepdetections(arr::Array)
 end
 function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
     rows, cols = size(input)
-    bools = CuArrays.zeros(Int32, cols)
+    bools = CUDA.zeros(Int32, cols)
     @cuda blocks=cols threads=rows kern_genbools(input, bools)
     idxs = cumsum(bools)
     n = count(bools)
