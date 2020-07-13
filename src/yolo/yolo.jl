@@ -137,7 +137,7 @@ function upsample(a, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
     if CU_FUNCTIONAL[]
-        b = CuArrays.ones(Float32, stride, 1, stride, 1, 1, 1)
+        b = CUDA.ones(Float32, stride, 1, stride, 1, 1, 1)
     else
         b = ones(Float32, stride, 1, stride, 1, 1, 1)
     end
@@ -381,7 +381,7 @@ mutable struct yolo <: AbstractModel
 
             # precalculate the scale factor from layer-relative to image-relative
             if CU_FUNCTIONAL[]
-                scale = reshape(CuArrays.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+                scale = reshape(CUDA.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             else
                 scale = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             end
@@ -393,7 +393,7 @@ mutable struct yolo <: AbstractModel
 
             # precalculate the anchor shapes to scale up the detection boxes
             if CU_FUNCTIONAL[]
-                anchor = reshape(CuArrays.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
+                anchor = reshape(CUDA.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             else
                 anchor = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             end
