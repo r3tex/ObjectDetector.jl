@@ -501,7 +501,7 @@ function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH B
     bools = CUDA.zeros(Int32, cols)
     @cuda blocks=cols threads=rows kern_genbools(input, bools)
     idxs = cumsum(bools)
-    n = count(bools)
+    n = count(isone, bools)
     output = CuArray{Float32, 2}(undef, rows, n)
     @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
     return output
