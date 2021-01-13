@@ -9,6 +9,7 @@ const models_dir = joinpath(@__DIR__, "models")
 using Flux
 import Flux.gpu
 using Flux.CUDA
+using LazyArtifacts
 
 const CU_FUNCTIONAL = Ref{Bool}(false)
 
@@ -81,7 +82,7 @@ function readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool)
         bv = reinterpret(Float32, read(bytes, fl*4))
         cb = zeros(Float32, fl)
         cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
-        cw = Float32.(flip(cw))        
+        cw = Float32.(flip(cw))
         return cw, cb, bb, bw, bm, bv
     else
         cb = reinterpret(Float32, read(bytes, fl*4))
@@ -385,7 +386,7 @@ mutable struct yolo <: AbstractModel
             else
                 scale = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
             end
-            
+
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
                 scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
@@ -616,7 +617,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     ############################
 
     batchout = cpu(keepdetections(cat(outweights..., dims=2)))
-    if size(batchout, 1) == 0  
+    if size(batchout, 1) == 0
         if CU_FUNCTIONAL[]
             return CUDA.zeros(Float32, 1, 1)
         else
