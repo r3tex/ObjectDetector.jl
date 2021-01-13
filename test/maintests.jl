@@ -2,6 +2,15 @@ dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
 oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 @info "Testing all models with detectThresh = $dThresh, overlapThresh = $oThresh"
 
+@testset "Download all artifacts" begin
+    @info artifact"yolov2-COCO"
+    @info artifact"yolov2-tiny-COCO"
+    @info artifact"yolov3-COCO"
+    @info artifact"yolov3-spp-COCO"
+    @info artifact"yolov3-tiny-COCO"
+    @info "All artifacts downloaded"
+end
+
 testimages = ["dog-cycle-car_nonsquare","dog-cycle-car"]
 pretrained_list = [
                     YOLO.v2_tiny_416_COCO,
