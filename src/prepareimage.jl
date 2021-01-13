@@ -54,19 +54,19 @@ Input images should be column-major (julia default), and will be converted to ro
 function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
     modelInputSize = getModelInputSize(model)
     if ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
-        return (gpu(permuteddimsview(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
+        return (gpu(PermutedDimsArray(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 1
-        return (gpu(Float32.(reshape(permuteddimsview(channelview(img), [2,1]), modelInputSize...))), [0,0,0,0])
+        return (gpu(Float32.(reshape(PermutedDimsArray(channelview(img), [2,1]), modelInputSize...))), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 3
         img_chv = channelview(img)
         if ndims(img_chv) == 2
-            return (gpu(Float32.(repeat(reshape(permuteddimsview(img_chv, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+            return (gpu(Float32.(repeat(reshape(PermutedDimsArray(img_chv, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
         elseif size(img_chv, 1) == 1
-            return (gpu(Float32.(repeat(permuteddimsview(img_chv, [3,2,1]), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+            return (gpu(Float32.(repeat(PermutedDimsArray(img_chv, [3,2,1]), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
         elseif size(img_chv, 1) == 3
-            return (gpu(Float32.(permuteddimsview(img_chv, [3,2,1]))), [0,0,0,0])
+            return (gpu(Float32.(PermutedDimsArray(img_chv, [3,2,1]))), [0,0,0,0])
         elseif size(img_chv, 1) == 4
-            return (gpu(Float32.(permuteddimsview(view(img_chv,1:3,:,:), [3,2,1]))), [0,0,0,0])
+            return (gpu(Float32.(PermutedDimsArray(view(img_chv,1:3,:,:), [3,2,1]))), [0,0,0,0])
 
         else
             error("Image element type $(eltype(img)) not supported")
@@ -83,11 +83,11 @@ function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
     if ndims(img) == 3 && size(img) == modelInputSize[1:3]
         return (gpu(img), [0,0,0,0])
     elseif ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
-        return (gpu(permuteddimsview(img, [3,2,1])), [0,0,0,0])
+        return (gpu(PermutedDimsArray(img, [3,2,1])), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 1
-        return (gpu(Float32.(reshape(permuteddimsview(img, [2,1]), modelInputSize...))), [0,0,0,0])
+        return (gpu(Float32.(reshape(PermutedDimsArray(img, [2,1]), modelInputSize...))), [0,0,0,0])
     elseif ndims(img) == 2 && size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 3
-        return (gpu(Float32.(repeat(reshape(permuteddimsview(img, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+        return (gpu(Float32.(repeat(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
     else
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
@@ -114,9 +114,9 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Floa
     if ndims(img) == 3 && size(img) == size(dest_arr)
         return (gpu(img), [0,0,0,0])
     elseif ndims(img) == 3 && size(img)[[2,1,3]] == size(dest_arr)
-        return (gpu(permuteddimsview(img, [2,1,3])), [0,0,0,0])
+        return (gpu(PermutedDimsArray(img, [2,1,3])), [0,0,0,0])
     elseif ndims(img) == 2 && size(img)[[2,1]] == size(dest_arr)[1:2]
-        return (gpu(reshape(permuteddimsview(img, [2,1]), size(img,2), size(img, 1), 1)))
+        return (gpu(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img, 1), 1)))
     elseif ndims(img) == 2
         return prepareImage!(dest_arr, colorview(Gray, img), kern)
     elseif size(img, 1) == 1
@@ -124,7 +124,7 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Floa
     elseif size(img, 3) == 1
         return prepareImage!(dest_arr, colorview(Gray, img)[:,:,1], kern)
     elseif size(img, 3) == 3
-        return prepareImage!(dest_arr, colorview(RGB, permuteddimsview(img, [3,1,2])), kern)
+        return prepareImage!(dest_arr, colorview(RGB, PermutedDimsArray(img, [3,1,2])), kern)
     else
         error("Array needs to match dimensions exactly, or 3rd dim should be of length 1 or 3 to allow colortype transformations")
     end
@@ -132,7 +132,7 @@ end
 
 function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
     # @show typeof(img), size(img)
-    imgPerm = permuteddimsview(img, [2,1])  # Convert from column-major (julia default) to row-major (darknet)
+    imgPerm = PermutedDimsArray(img, [2,1])  # Convert from column-major (julia default) to row-major (darknet)
 
     img_resized_size = sizethatfits(size(imgPerm), size(dest_arr))
     padding = getpadding(img_resized_size, size(dest_arr))
@@ -147,10 +147,10 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, 
             img_ready = repeat(Float32.(reshape(img_chv,(size(img_chv)...,1))),
                         outer=[1,1,size(dest_arr, 3)])
         elseif (size(img_chv,1) != size(dest_arr, 3)) && (size(img_chv, 1) == 1)
-            img_ready = repeat(Float32.(permuteddimsview(img_chv, [2,3,1])),
+            img_ready = repeat(Float32.(PermutedDimsArray(img_chv, [2,3,1])),
                         outer=[1,1,size(dest_arr, 3)])
         else
-            img_ready = permuteddimsview(img_chv, [2,3,1])[:, :, 1:size(dest_arr,3)]
+            img_ready = PermutedDimsArray(img_chv, [2,3,1])[:, :, 1:size(dest_arr,3)]
         end
     elseif any(size(imgPerm)[1:2] .< size(dest_arr)[1:2])
         imgr = ImageTransformations.imresize(imgPerm, img_resized_size[1:2])
@@ -158,14 +158,14 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, 
         if ndims(img_chv) == 2
             img_ready = Float32.(reshape(img_chv, (size(img_chv)...,1)))
         else
-            img_ready = view(permuteddimsview(Float32.(img_chv), [2,3,1]), :, :, 1:size(dest_arr,3))
+            img_ready = view(PermutedDimsArray(Float32.(img_chv), [2,3,1]), :, :, 1:size(dest_arr,3))
         end
     else
         img_chv = channelview(imgPerm)
         if ndims(img_chv) == 3
-            img_ready = view(permuteddimsview(Float32.(img_chv), [2,3,1]), :, :, 1:size(dest_arr,3))
+            img_ready = view(PermutedDimsArray(Float32.(img_chv), [2,3,1]), :, :, 1:size(dest_arr,3))
         else
-            img_ready = Float32.(repeat(permuteddimsview(img_chv, [1,2]), outer = [1, 1, size(dest_arr,3)]))
+            img_ready = Float32.(repeat(PermutedDimsArray(img_chv, [1,2]), outer = [1, 1, size(dest_arr,3)]))
         end
     end
     target_img_subregion .= gpu(img_ready)
