@@ -1,7 +1,7 @@
 name = "ObjectDetector"
 uuid = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
 authors = ["Robert Luciani"]
-version = "0.1.11"
+version = "0.1.12"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
@@ -10,6 +10,7 @@ ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
 ImageDraw = "4381153b-2b60-58ae-a1ba-fd683676385f"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
 ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
+LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 
@@ -20,6 +21,7 @@ ImageCore = "0.8"
 ImageDraw = "0.2"
 ImageFiltering = "0.6"
 ImageTransformations = "0.8"
+LazyArtifacts = "1.3"
 PrettyTables = "0.7, 0.8, 0.9, 0.10"
 julia = "1.3"
 
