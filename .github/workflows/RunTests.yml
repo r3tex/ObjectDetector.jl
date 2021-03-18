@@ -20,7 +20,7 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
-      - run: julia --project -e 'import Pkg; Pkg.add(PackageSpec(name="Flux", rev="cl/deprecations"))'
+      - run: julia --project -e 'using Pkg; Pkg.add(PackageSpec(name="Flux", rev="cl/deprecations"))'
       - uses: julia-actions/julia-runtest@master
       # - uses: julia-actions/julia-processcoverage@v1
       # - uses: codecov/codecov-action@v1
