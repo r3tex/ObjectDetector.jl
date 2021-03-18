@@ -1,7 +1,9 @@
 name: Run tests
 
 on: [push]
-
+defaults:
+  run:
+    shell: bash
 jobs:
   test:
     runs-on: ${{ matrix.os }}
