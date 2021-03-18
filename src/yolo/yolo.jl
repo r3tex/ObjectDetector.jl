@@ -155,7 +155,7 @@ number of element will still the same: width_old*height_old*channels_old = width
 """
 function reorg(a, stride)
     w, h, c = size(a)
-    return reshape(a, (w/stride, h/stride, c*(stride^2)))
+    return reshape(a, (w // stride, h // stride, c*(stride^2)))
 end
 
 # Use this dict to translate the config activation names to function names
