@@ -625,18 +625,20 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         end
     end
 
-
     classes = unique(batchout[end-1, :])
-    output = Array{Array{Float32, 2},1}(undef, 0)
-    for c in classes
-        detection = sortslices(batchout[:, batchout[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
-        for l in 1:size(detection, 2)
-            iou = bboxiou(view(detection, 1:4, l), detection[1:4, l+1:end])
-            ds = findall(v -> v >= overlapThresh, iou)
-            detection = detection[:, setdiff(1:size(detection, 2), ds .+ l)]
-            l >= size(detection,2) && break
+    output = Array{Float32, 2}[]
+    @views for b in 1:yolo.cfg[:batchsize]
+        page = batchout[:, batchout[end,:] .== b]
+        for c in classes
+            detection = sortslices(page[:, page[end-1, :] .== c], dims = 2, by = x -> x[5], rev = true)
+            for det_idx in 1:size(detection, 2)
+                iou = bboxiou(detection[1:4, det_idx], detection[1:4, det_idx+1:end])
+                same_objects = findall(>=(overlapThresh), iou)
+                detection = detection[:, setdiff(1:size(detection, 2), same_objects .+ det_idx)]
+                det_idx >= size(detection,2) && break
+            end
+            push!(output, detection)
         end
-        push!(output, detection)
     end
     return hcat(output...)
 end

@@ -22,6 +22,41 @@ pretrained_list = [
                     # YOLO.v3_spp_608_COCO
                     ]
 
+@testset "batch sizes" begin
+    IMG = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
+    @testset "Batch size $batch_size" for batch_size in [1, 3]
+        yolomod = YOLO.v3_tiny_416_COCO(batch = batch_size, silent=true)
+        batch = emptybatch(yolomod)
+        @test size(batch) == (416, 416, 3, batch_size)
+        for b in 1:batch_size
+            batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
+        end
+        res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
+        @test size(res) == (89, 4 * batch_size)
+        for b in 2:batch_size
+            @test res[1:end-1, res[end,:] .== 1] == res[1:end-1, res[end,:] .== b]
+        end
+    end
+end
+
+@testset "Custom cfg's" begin
+    @testset "Valid non-square dimensions (512x384)" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
+        batch = emptybatch(yolomod)
+        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
+        @test size(res,2) > 0
+    end
+    @testset "Invalid non-square dimensions" begin
+        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
+        # invalid height
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=512, h=383)
+        # invalid width
+        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=511, h=384)
+    end
+end
+
 header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "objects detected"]
 table = Array{Any}(undef, length(pretrained_list), 6)
 for (k, pretrained) in pairs(pretrained_list)
@@ -65,22 +100,3 @@ for (k, pretrained) in pairs(pretrained_list)
 end
 pretty_table(table, header)
 @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
-
-
-@testset "Custom cfg's" begin
-    @testset "Valid non-square dimensions (512x384)" begin
-        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
-        yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
-        batch = emptybatch(yolomod)
-        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
-        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
-        @test size(res,2) > 0
-    end
-    @testset "Invalid non-square dimensions" begin
-        IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
-        # invalid height
-        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=512, h=383)
-        # invalid width
-        @test_throws AssertionError YOLO.v3_COCO(silent=false, w=511, h=384)
-    end
-end
