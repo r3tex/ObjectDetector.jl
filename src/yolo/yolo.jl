@@ -616,14 +616,9 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     # PROCESSING ALL PREDICTIONS
     ############################
 
-    batchout = cpu(keepdetections(cat(outweights..., dims=2)))
-    if size(batchout, 1) == 0
-        if CU_FUNCTIONAL[]
-            return CUDA.zeros(Float32, 1, 1)
-        else
-            return zeros(Float32, 1, 1)
-        end
-    end
+    batchout = cpu(keepdetections(cat(outweights..., dims=2)))::Matrix{Float32}
+
+    size(batchout, 2) < 2 && return batchout # empty or singular output doesn't need further filtering
 
     classes = unique(batchout[end-1, :])
     output = Array{Float32, 2}[]
@@ -640,7 +635,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
             push!(output, detection)
         end
     end
-    return hcat(output...)
+    return hcat(output...)::Matrix{Float32}
 end
 
 include(joinpath(@__DIR__,"pretrained.jl"))
