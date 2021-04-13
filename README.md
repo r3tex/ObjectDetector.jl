@@ -3,12 +3,6 @@
 Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
 Uses CUDA, if available.
 
-
-| **Platform**                                                               | **Build Status**                                                                                |
-|:-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
-| 64-bit Linux, MacOS, Windows & ARM64 | [![][travis-img]][travis-url] [![][codecov-img]][codecov-url] |
-
-
 ## Installation
 
 Requires julia v1.3+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
@@ -170,9 +164,6 @@ first model also takes ~4 seconds (as opposed to current performance on 1.3.0 of
 See [dev/compilation/compiler.jl](dev/compilation/compiler.jl) for instructions.
 
 [discourse-tag-url]: https://discourse.julialang.org/tags/yolo
-
-[travis-img]: https://travis-ci.com/r3tex/ObjectDetector.jl.svg?branch=master
-[travis-url]: https://travis-ci.com/r3tex/ObjectDetector.jl
 
 [codecov-img]: https://codecov.io/gh/r3tex/ObjectDetector.jl/branch/master/graph/badge.svg
 [codecov-url]: https://codecov.io/gh/r3tex/ObjectDetector.jl
