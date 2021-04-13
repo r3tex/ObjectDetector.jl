@@ -134,14 +134,16 @@ end
 
 Optimized upsampling without indexing for better GPU performance
 """
-function upsample(a, stride)
+function upsample(a::DenseArray, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    if CU_FUNCTIONAL[]
-        b = CUDA.ones(Float32, stride, 1, stride, 1, 1, 1)
-    else
-        b = ones(Float32, stride, 1, stride, 1, 1, 1)
-    end
+    b = ones(Float32, stride, 1, stride, 1, 1, 1)
+    return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
+end
+function upsample(a::CuArray, stride)
+    m1, n1, o1, p1 = size(a)
+    ar = reshape(a, (1, m1, 1, n1, o1, p1))
+    b = CUDA.ones(Float32, stride, 1, stride, 1, 1, 1)
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -547,6 +549,13 @@ function bboxiou(box1, box2)
     return iou
 end
 
+function extend_for_attributes(weights::DenseArray, w, h, bo, ba)
+    return cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
+end
+function extend_for_attributes(weights::CuArray, w, h, bo, ba)
+    return cat(weights, CUDA.zeros(Float32, w, h, 4, bo, ba), dims = 3)
+end
+
 """
     (yolo::yolo)(img::DenseArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
@@ -597,11 +606,8 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
         weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
         # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
-        if CU_FUNCTIONAL[]
-            weights = cat(weights, CUDA.zeros(Float32, w, h, 4, bo, ba), dims = 3)
-        else
-            weights = cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
-        end
+        weights = extend_for_attributes(weights, w, h, bo, ba)
+
         weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
         for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
         weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
