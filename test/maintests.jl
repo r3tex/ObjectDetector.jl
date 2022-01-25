@@ -79,7 +79,7 @@ for (k, pretrained) in pairs(pretrained_list)
             @info """Testing image "$imagename" """
             IMG = load(joinpath(@__DIR__,"images","$imagename.png"))
             resultsdir = joinpath(@__DIR__,"results",imagename)
-            !isdir(resultsdir) && mkdir(resultsdir)
+            mkpath(resultsdir)
             batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
 
             val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
