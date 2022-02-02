@@ -89,9 +89,8 @@ for (k, pretrained) in pairs(pretrained_list)
             table[k, 6] = size(res, 2)
             @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
 
-            imgBoxes = drawBoxes(IMG, yolomod, padding, res)
             resfile = joinpath(resultsdir,"$(modelname).png")
-            save(resfile, imgBoxes)
+            @test_reference resfile drawBoxes(IMG, yolomod, padding, res)
             @info "$modelname: View result: $resfile"
 
         end
