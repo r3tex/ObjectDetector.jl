@@ -14,10 +14,9 @@ LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 
-
 [compat]
 BenchmarkTools = "0.4, 0.5, 0.6, 0.7, 1.0"
-Flux = "0.12"
+Flux = "0.12, 0.13"
 ImageCore = "0.8, 0.9"
 ImageDraw = "0.2"
 ImageFiltering = "0.6, 0.7"
