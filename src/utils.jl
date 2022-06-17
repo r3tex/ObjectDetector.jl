@@ -23,13 +23,13 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 """
-    drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results)
-    drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results)
+    drawBoxes(img::Array, model::YOLO.yolo, padding::Array, bboxcolor, results)
+    drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, bboxcolor, results)
 
 Draw boxes on image for each BBOX result.
 """
-drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
-function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true)
+drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, bboxcolor, results; transpose=true) = drawBoxes!(copy(img), model, padding, bboxcolor, results, transpose=transpose)
+function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, bboxcolor, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = model.cfg[:width] / model.cfg[:height]
@@ -57,7 +57,7 @@ function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray
         r = Point(round(Int, bbox[x1i]*w)+1, round(Int, bbox[y2i]*h))
         s = Point(round(Int, bbox[x2i]*w), round(Int, bbox[y2i]*h))
         pol = Polygon([p,q,s,r])
-        draw!(img, pol, zero(eltype(img)))
+        draw!(img, pol, bboxcolor)   # draw!(img, pol, zero(eltype(img)))
     end
     return img
 end

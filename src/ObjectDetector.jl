@@ -16,6 +16,7 @@ using ImageCore
 using BenchmarkTools
 using PrettyTables
 using ImageDraw
+using Colors
 
 abstract type AbstractModel end
 function getModelInputSize end
