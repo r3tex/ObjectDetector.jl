@@ -97,5 +97,5 @@ for (k, pretrained) in pairs(pretrained_list)
     end
     GC.gc()
 end
-pretty_table(table, header)
+pretty_table(table, header = header)
 @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
