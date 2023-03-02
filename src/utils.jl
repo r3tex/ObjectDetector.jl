@@ -81,7 +81,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
     IMG = rand(RGB,416,416)
 
-    header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "run time (fps)"]
+    header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "run time (fps)"]
     table = Array{Any}(undef, length(pretrained_list), 6)
     for (i, pretrained) in pairs(pretrained_list)
         modelname = string(pretrained)
