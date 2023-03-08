@@ -57,7 +57,7 @@ end
     end
 end
 
-header = ["Model" "loaded?" "load time (s)" "ran?" "run time (s)" "objects detected"]
+header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "objects detected"]
 table = Array{Any}(undef, length(pretrained_list), 6)
 for (k, pretrained) in pairs(pretrained_list)
     global table
@@ -97,5 +97,5 @@ for (k, pretrained) in pairs(pretrained_list)
     end
     GC.gc()
 end
-pretty_table(table, header)
+pretty_table(table, header = header)
 @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
