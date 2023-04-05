@@ -9,3 +9,6 @@
 *.weights
 Manifest.toml
 *.so
+
+## vscode
+.vscode
