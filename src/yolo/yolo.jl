@@ -6,18 +6,9 @@ import ..AbstractModel, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
 
-using CUDA
-import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
-using Flux
-
+import Flux
+import Flux: gpu, σ
 using LazyArtifacts
-
-const CU_FUNCTIONAL = Ref{Bool}(false)
-
-function __init__()
-    CUDA.allowscalar(false)
-    CU_FUNCTIONAL[] = CUDA.functional()
-end
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -32,7 +23,7 @@ function cfgparse(val::AbstractString)
     if all(isletter, val)
         return val::AbstractString
     else
-        return out = occursin('.', val) ? parse(Float64, val) : parse(Int64, val)
+        return occursin('.', val) ? parse(Float64, val) : parse(Int64, val)
     end
 end
 
@@ -120,18 +111,6 @@ This is only run once when weights are loaded
 flip(x) = @view x[end:-1:1, end:-1:1, :, :]
 
 """
-    maxpools1(x, kernel = 2)
-We need a max-pool with a fixed stride of 1. Required given assymetric padding
-isn't supported by CuDNN
-"""
-function maxpools1(x, kernel = 2)
-    x = cat(x, x[:, end:end, :, :], dims = 2)
-    x = cat(x, x[end:end, :, :, :], dims = 1)
-    pdims = PoolDims(x, (kernel, kernel); stride = 1)
-    return maxpool(x, pdims)
-end
-
-"""
     upsample(a, stride)
 
 Optimized upsampling without indexing for better GPU performance
@@ -140,12 +119,6 @@ function upsample(a::DenseArray, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
     b = ones(Float32, stride, 1, stride, 1, 1, 1)
-    return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
-end
-function upsample(a::CuArray, stride)
-    m1, n1, o1, p1 = size(a)
-    ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    b = CUDA.ones(Float32, stride, 1, stride, 1, 1, 1)
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -204,8 +177,11 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
-gpu(x, use::Bool) = use ? Flux.gpu(x) : x
 uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
+
+function maxpool(x; siz, stride)
+    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
+end
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
@@ -221,6 +197,10 @@ mutable struct yolo <: AbstractModel
     yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
+
+        # make our own shorthand `gpu` function that can be switched on or off
+        gpu(x) = use_gpu ? Flux.gpu(x) : x
+
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
@@ -264,10 +244,10 @@ mutable struct yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
-                push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1), use_gpu))
-                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb)), use_gpu))
+                push!(stack, gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
+                bn && push!(stack, gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, let; _act(x) = act.(x) end)
-                push!(fn, Chain(stack...))
+                push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
                 !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
@@ -284,11 +264,7 @@ mutable struct yolo <: AbstractModel
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                if stride==1 && CU_FUNCTIONAL[]
-                    push!(fn, let; _maxpools1(x) = maxpools1(x, siz) end) #Asymmetric padding not supported by CuDNN
-                else
-                    push!(fn, let; _maxpool(x) = maxpool(x, PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride))) end)
-                end
+                push!(fn, let; _maxpool(x) = maxpool(x; siz, stride) end)
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
@@ -330,7 +306,7 @@ mutable struct yolo <: AbstractModel
         # PART 2 - THE SKIPS
         ####################
         # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize), use_gpu)]
+        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
@@ -349,16 +325,19 @@ mutable struct yolo <: AbstractModel
             for j in fst:lst
                 if typeof(fn[j]) <: Tuple
                     arrayidx = layer2out[fn[j][1]]
-                    if fn[j][2] == :route
+                    skip_type = fn[j][2]
+                    if skip_type == :route
                         fn[j] = let; _route(x) = identity(W[arrayidx]) end
-                    elseif fn[j][2] == :add
+                    elseif skip_type == :add
                         fn[j] = let; _add(x) = x + W[arrayidx] end
-                    elseif fn[j][2] == :cat
+                    elseif skip_type == :cat
                         fn[j] = let; _cat(x) = cat(x, W[arrayidx], dims = 3) end
+                    else
+                        error("Unknown skip layer $skip_type")
                     end
                 end
             end
-            push!(chainstack, Chain(fn[fst:lst]...)) # add sequence of functions to a chain
+            push!(chainstack, Flux.Chain(fn[fst:lst]...)) # add sequence of functions to a chain
             push!(testimgs, chainstack[end](testimgs[end])) # run the previous test image
             push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
@@ -388,22 +367,14 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            if CU_FUNCTIONAL[]
-                offset = reshape(CUDA.zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            else
-                offset = reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            end
+            offset = gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            if CU_FUNCTIONAL[]
-                scale = reshape(CUDA.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            else
-                scale = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            end
+            scale = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
 
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
@@ -411,11 +382,8 @@ mutable struct yolo <: AbstractModel
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            if CU_FUNCTIONAL[]
-                anchor = reshape(CUDA.ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            else
-                anchor = reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b)
-            end
+            anchor = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
                 anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
@@ -463,18 +431,6 @@ function clipdetect!(input::Array, conf)
        input[5, i] = ifelse(input[5, i] > conf, input[5, i], Float32(0))
    end
 end
-function clipdetect!(input::CuArray, conf)
-    rows, cols = size(input)
-    @cuda blocks=cols threads=1024 kern_clipdetect(input, conf)
-end
-function kern_clipdetect(input::CuDeviceArray, conf::Float32)
-    idx = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    cols = gridDim().x
-    if idx <= cols
-        @inbounds input[5, idx] = ifelse(input[5, idx] > conf, input[5, idx], Float32(0.0))
-    end
-    return
-end
 
 """
     findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
@@ -486,26 +442,7 @@ function findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
         input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
     end
 end
-function findmax!(input::CuArray, idst::Int, idend::Int)
-    rows, cols = size(input)
-    @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
-end
-function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) where {T}
-    if threadIdx().x == idend
-        j = blockIdx().x
-        val = zero(T)
-        idx = zero(T)
-        for i in idst:idend
-            if input[i, j] > val
-                val = input[i, j]
-                idx = i
-            end
-        end
-        @inbounds input[end-2, j] = val
-        @inbounds input[end-1, j] = idx - idst + 1
-    end
-    return
-end
+
 
 """
     keepdetections(arr::Array)
@@ -515,35 +452,6 @@ Reduces the size of array and only keeps detections over threshold
 function keepdetections(arr::Array)
     return arr[:, arr[5, :] .> 0]
 end
-function keepdetections(input::CuArray) # THREADS:BLOCKS CAN BE OPTIMIZED WITH BETTER KERNEL
-    rows, cols = size(input)
-    bools = CUDA.zeros(Int32, cols)
-    @cuda blocks=cols threads=rows kern_genbools(input, bools)
-    idxs = cumsum(bools)
-    n = count(isone, bools)
-    output = CuArray{Float32, 2}(undef, rows, n)
-    @cuda blocks=cols threads=rows kern_keepdetections(input, output, bools, idxs)
-    return output
-end
-function kern_genbools(input::CuDeviceArray, output::CuDeviceArray)
-    col = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    cols = gridDim().x
-    if col < cols && input[5, col] > Float32(0)
-        @inbounds output[col] = Int32(1)
-    end
-    return
-end
-@inline function kern_keepdetections(input::CuDeviceArray, output::CuDeviceArray,
-    bools::CuDeviceArray, idxs::CuDeviceArray)
-    col = blockIdx().x
-    row = threadIdx().x
-    if bools[col] == Int32(1)
-        idx = idxs[col]
-        @inbounds output[row, idx] = input[row, col]
-    end
-    return
-end
-
 
 """
     bboxiou(box1, box2)
@@ -567,9 +475,6 @@ end
 
 function extend_for_attributes(weights::DenseArray, w, h, bo, ba)
     return cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
-end
-function extend_for_attributes(weights::CuArray, w, h, bo, ba)
-    return cat(weights, CUDA.zeros(Float32, w, h, 4, bo, ba), dims = 3)
 end
 
 """
@@ -638,7 +543,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
     # PROCESSING ALL PREDICTIONS
     ############################
 
-    batchout = cpu(keepdetections(cat(outweights..., dims=2)))::Matrix{Float32}
+    batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))::Matrix{Float32}
 
     size(batchout, 2) < 2 && return batchout # empty or singular output doesn't need further filtering
 

@@ -2,14 +2,9 @@ module ObjectDetector
 export YOLO
 export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBoxes
 
-using CUDA
-import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
 import Flux.gpu
-import Flux.cpu
-export gpu, cpu
 
 using Pkg.Artifacts
-#getArtifact(name::String) = joinpath(@artifact_str(name), "$(name).weights") #Broken in 1.3.1 https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 using ImageFiltering
 using ImageTransformations
@@ -30,6 +25,10 @@ include(joinpath(@__DIR__,"yolo","yolo.jl"))
 import .YOLO
 
 include("utils.jl")
+
+if !isdefined(Base, :get_extension)
+    include("../ext/CUDAExt.jl")
+end
 
 @setup_workload begin
     @compile_workload begin
