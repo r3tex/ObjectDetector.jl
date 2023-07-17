@@ -33,7 +33,8 @@ include("utils.jl")
 
 @setup_workload begin
     @compile_workload begin
-        yolomod = YOLO.v3_COCO(dummy=true,silent=true)
+        # don't use GPU here because GPU compilation of Conv requires realistic weights not dummy weights
+        yolomod = YOLO.v3_COCO(dummy=true, silent=true, use_gpu=false)
         batch = emptybatch(yolomod)
         res = yolomod(batch)
         res = nothing

@@ -9,7 +9,6 @@ const models_dir = joinpath(@__DIR__, "models")
 using CUDA
 import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
 using Flux
-import Flux.gpu
 
 using LazyArtifacts
 
@@ -205,6 +204,8 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
+gpu(x, use::Bool) = use ? Flux.gpu(x) : x
+
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
@@ -215,7 +216,7 @@ mutable struct yolo <: AbstractModel
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
         # read the config file and return [:layername => Dict(:setting => value), ...]
@@ -261,8 +262,8 @@ mutable struct yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
-                push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
+                push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1), use_gpu))
+                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb)), use_gpu))
                 push!(stack, let; _act(x) = act.(x) end)
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
@@ -327,7 +328,7 @@ mutable struct yolo <: AbstractModel
         # PART 2 - THE SKIPS
         ####################
         # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize), use_gpu)]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
