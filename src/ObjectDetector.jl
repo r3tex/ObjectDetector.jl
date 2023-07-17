@@ -16,6 +16,7 @@ using ImageCore
 using BenchmarkTools
 using PrettyTables
 using ImageDraw
+using PrecompileTools
 
 abstract type AbstractModel end
 function getModelInputSize end
@@ -28,7 +29,15 @@ import .YOLO
 
 include("utils.jl")
 
-include("../deps/SnoopCompile/precompile/precompile_ObjectDetector.jl")
-_precompile_()
+@setup_workload begin
+    @compile_workload begin
+        yolomod = YOLO.v3_COCO(dummy=true,silent=true)
+        batch = emptybatch(yolomod)
+        res = yolomod(batch)
+        res = nothing
+        batch = nothing
+        yolomod = nothing
+    end
+end
 
 end #module

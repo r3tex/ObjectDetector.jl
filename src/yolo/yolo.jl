@@ -75,19 +75,20 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+    dummy = isnothing(bytes)
     if bn
-        bb = reinterpret(Float32, read(bytes, fl*4))
-        bw = reinterpret(Float32, read(bytes, fl*4))
-        bm = reinterpret(Float32, read(bytes, fl*4))
-        bv = reinterpret(Float32, read(bytes, fl*4))
+        bb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bw = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bm = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bv = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
         cb = zeros(Float32, fl)
-        cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, bb, bw, bm, bv
     else
-        cb = reinterpret(Float32, read(bytes, fl*4))
-        cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
@@ -213,7 +214,9 @@ mutable struct yolo <: AbstractModel
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
+        # load dummy weights (avoids download for precompilation)
+        dummy = isnothing(weightfile)
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
@@ -227,10 +230,18 @@ mutable struct yolo <: AbstractModel
         cfg = cfgvec[1][2]
         yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
         cfg[:yoloversion] = yoloversion
-        weightbytes = IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
+        weightbytes = if dummy
+            nothing # readweights knows to make up dummy weights if this is nothing
+        else
+            IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
+        end
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
-        maj, min, subv, im1, im2 = reinterpret(Int32, read(weightbytes, 4*5))
+        maj, min, subv, im1, im2 = if dummy
+            ones(Int32, 5)
+        else
+            reinterpret(Int32, read(weightbytes, 4*5))
+        end
         cfg[:darknetversion] = VersionNumber("$maj.$min.$subv")
         cfg[:batchsize] = batchsize
         cfg[:output] = []

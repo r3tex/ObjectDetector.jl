@@ -12,8 +12,9 @@ end
 v2_tiny_416_COCO(;batch=1, silent=false, cfgchanges=nothing) = v2_tiny_COCO(w=416, h=416, batch=batch, silent=silent, cfgchanges=cfgchanges)
 
 ## YOLOV3
-function v3_COCO(;batch=1, silent=false, w=416, h=416, cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)])
-    yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
+function v3_COCO(;batch=1, silent=false, w=416, h=416, cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)], dummy::Bool=false)
+    weightsfile = dummy ? nothing : joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights")
+    yolo(joinpath(models_dir,"yolov3-416.cfg"), weightsfile, batch; silent, cfgchanges)
 end
 v3_320_COCO(;batch=1, silent=false, cfgchanges=nothing) = v3_COCO(w=320, h=320, batch=batch, silent=silent, cfgchanges=cfgchanges)
 v3_416_COCO(;batch=1, silent=false, cfgchanges=nothing) = v3_COCO(w=416, h=416, batch=batch, silent=silent, cfgchanges=cfgchanges)
