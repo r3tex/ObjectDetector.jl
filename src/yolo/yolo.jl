@@ -6,10 +6,11 @@ import ..AbstractModel, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
 
-using Flux
-import Flux.gpu
 using CUDA
 import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
+using Flux
+import Flux.gpu
+
 using LazyArtifacts
 
 const CU_FUNCTIONAL = Ref{Bool}(false)

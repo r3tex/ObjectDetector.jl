@@ -2,6 +2,8 @@ module ObjectDetector
 export YOLO
 export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBoxes
 
+using CUDA
+import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
 import Flux.gpu
 import Flux.cpu
 export gpu, cpu
