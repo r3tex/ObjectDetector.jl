@@ -239,7 +239,7 @@ mutable struct yolo <: AbstractModel
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
         maj, min, subv, im1, im2 = if dummy
-            ones(Int32, 5)
+            (0, 2, 0, 32013312, 0) # this is brittle. Values are for v3_COCO() which is used by precompilation
         else
             reinterpret(Int32, read(weightbytes, 4*5))
         end
