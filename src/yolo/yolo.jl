@@ -6,9 +6,10 @@ import ..AbstractModel, ..getModelInputSize
 
 const models_dir = joinpath(@__DIR__, "models")
 
+using CUDA
+import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
 using Flux
-import Flux.gpu
-using Flux.CUDA
+
 using LazyArtifacts
 
 const CU_FUNCTIONAL = Ref{Bool}(false)
@@ -74,19 +75,20 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+    dummy = isnothing(bytes)
     if bn
-        bb = reinterpret(Float32, read(bytes, fl*4))
-        bw = reinterpret(Float32, read(bytes, fl*4))
-        bm = reinterpret(Float32, read(bytes, fl*4))
-        bv = reinterpret(Float32, read(bytes, fl*4))
+        bb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bw = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bm = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        bv = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
         cb = zeros(Float32, fl)
-        cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, bb, bw, bm, bv
     else
-        cb = reinterpret(Float32, read(bytes, fl*4))
-        cw = reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
@@ -202,6 +204,9 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
+gpu(x, use::Bool) = use ? Flux.gpu(x) : x
+uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
+
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
@@ -210,9 +215,12 @@ mutable struct yolo <: AbstractModel
     chain::Array{Any, 1}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
+    uses_gpu::Bool                           # Whether the gpu was requested to be used
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::String, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
+        # load dummy weights (avoids download for precompilation)
+        dummy = isnothing(weightfile)
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
         cfgvec = cfgread(cfgfile)
@@ -226,10 +234,18 @@ mutable struct yolo <: AbstractModel
         cfg = cfgvec[1][2]
         yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
         cfg[:yoloversion] = yoloversion
-        weightbytes = IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
+        weightbytes = if dummy
+            nothing # readweights knows to make up dummy weights if this is nothing
+        else
+            IOBuffer(read(weightfile)) # read weights file sequentially like byte stream
+        end
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
-        maj, min, subv, im1, im2 = reinterpret(Int32, read(weightbytes, 4*5))
+        maj, min, subv, im1, im2 = if dummy
+            ones(Int32, 5)
+        else
+            reinterpret(Int32, read(weightbytes, 4*5))
+        end
         cfg[:darknetversion] = VersionNumber("$maj.$min.$subv")
         cfg[:batchsize] = batchsize
         cfg[:output] = []
@@ -248,8 +264,8 @@ mutable struct yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
-                push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
+                push!(stack, gpu(Conv(cw, cb; stride = stride, pad = pad, dilation = 1), use_gpu))
+                bn && push!(stack, gpu(BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb)), use_gpu))
                 push!(stack, let; _act(x) = act.(x) end)
                 push!(fn, Chain(stack...))
                 push!(ch, filters)
@@ -314,7 +330,7 @@ mutable struct yolo <: AbstractModel
         # PART 2 - THE SKIPS
         ####################
         # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize), use_gpu)]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
@@ -413,7 +429,7 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, chainstack, W, out)
+        return new(cfg, chainstack, W, out, use_gpu)
     end
 end
 

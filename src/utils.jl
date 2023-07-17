@@ -5,7 +5,12 @@ Create an empty batched input array on the GPU if available.
 """
 function emptybatch(model::T) where {T<:AbstractModel}
     modelInputSize = getModelInputSize(model)
-    gpu(zeros(Float32, modelInputSize...))
+    batch = zeros(Float32, modelInputSize...)
+    if YOLO.uses_gpu(model)
+        gpu(batch)
+    else
+        batch
+    end
 end
 
 """

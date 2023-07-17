@@ -2,6 +2,8 @@ module ObjectDetector
 export YOLO
 export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBoxes
 
+using CUDA
+import cuDNN # not used but needed to load Flux CUDA Exts in Flux 0.14+
 import Flux.gpu
 import Flux.cpu
 export gpu, cpu
@@ -16,6 +18,7 @@ using ImageCore
 using BenchmarkTools
 using PrettyTables
 using ImageDraw
+using PrecompileTools
 
 abstract type AbstractModel end
 function getModelInputSize end
@@ -28,7 +31,16 @@ import .YOLO
 
 include("utils.jl")
 
-include("../deps/SnoopCompile/precompile/precompile_ObjectDetector.jl")
-_precompile_()
+@setup_workload begin
+    @compile_workload begin
+        # don't use GPU here because GPU compilation of Conv requires realistic weights not dummy weights
+        yolomod = YOLO.v3_COCO(dummy=true, silent=true, use_gpu=false)
+        batch = emptybatch(yolomod)
+        res = yolomod(batch)
+        res = nothing
+        batch = nothing
+        yolomod = nothing
+    end
+end
 
 end #module
