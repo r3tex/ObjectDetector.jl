@@ -205,6 +205,7 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
 end
 
 gpu(x, use::Bool) = use ? Flux.gpu(x) : x
+uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
@@ -214,6 +215,7 @@ mutable struct yolo <: AbstractModel
     chain::Array{Any, 1}                     # This holds chains of weights and functions
     W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
+    uses_gpu::Bool                           # Whether the gpu was requested to be used
 
     # The constructor takes the official YOLO config files and weight files
     yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
@@ -427,7 +429,7 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, chainstack, W, out)
+        return new(cfg, chainstack, W, out, use_gpu)
     end
 end
 
