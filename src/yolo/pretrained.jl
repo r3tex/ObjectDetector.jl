@@ -1,4 +1,3 @@
-using Pkg.Artifacts
 ## YOLOV2
 function v2_COCO(;batch=1, silent=false, w=608, h=608, cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)], kwargs...)
     yolo(joinpath(models_dir,"yolov2-608.cfg"), joinpath(artifact"yolov2-COCO", "yolov2-COCO.weights"), batch; silent, cfgchanges, kwargs...)

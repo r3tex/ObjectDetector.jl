@@ -4,8 +4,6 @@ export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBo
 
 import Flux.gpu
 
-using Pkg.Artifacts
-
 using ImageFiltering
 using ImageTransformations
 using ImageCore
