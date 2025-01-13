@@ -565,7 +565,7 @@ the overlap threshold above which boxes are considered duplicates.
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
 function nms(dets::Matrix{Float32}, iou_thresh)
-    # We'll assume the bounding box coords are in dets[1:4, :].
+    # The bounding box coords are in dets[1:4, :].
     # The columns are sorted by score already (descending).
     idxs = collect(1:size(dets, 2))        # candidate column indexes
     keep = Int[]                            # final picks
@@ -615,12 +615,10 @@ function perform_detection_nms(
     overlapThresh,
     batchsize::Int
 )
-    # We assume:
     #  - batchout’s last row (end) has the batch index
     #  - batchout’s second-to-last row (end-1) has the class index
     #  - detection boxes: det[1:4, i] is the bounding box
     #  - det[5, i] is the confidence/score
-    # Adjust as needed for your layout.
 
     output = Matrix{Float32}[]  # array of matrices
 
