@@ -86,7 +86,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
 
 
-    header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "run time (fps)", "allocations"]
+    header = ["Model", "loaded?", "load time (s)", "#results", "run time (s)", "run time (fps)", "allocations"]
     table = Array{Any}(undef, length(pretrained_list), 7)
     for (i, pretrained) in pairs(pretrained_list)
         modelname = string(pretrained)
@@ -105,7 +105,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         res = mod(batch) #run once
         t_run = @belapsed $mod($batch);
         t_allocs = @allocated mod(batch)
-        table[i, 4] = true
+        table[i, 4] = size(res, 2)
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = round(1/t_run, digits=1)
         table[i, 7] = Base.format_bytes(t_allocs)
