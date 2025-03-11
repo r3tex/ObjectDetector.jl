@@ -73,7 +73,7 @@ end
 
 Convenient benchmarking
 """
-function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
+function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416))
     pretrained_list = [
                         YOLO.v2_tiny_416_COCO,
                         YOLO.v2_608_COCO,
@@ -84,7 +84,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
                         YOLO.v3_spp_608_COCO
                         ][select]
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
-    IMG = rand(RGB,416,416)
+
 
     header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "run time (fps)", "allocations"]
     table = Array{Any}(undef, length(pretrained_list), 7)
@@ -100,7 +100,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false)
         table[i, 3] = round(t_load, digits=3)
 
         batch = emptybatch(mod)
-        batch[:,:,:,1], padding = prepareImage(IMG, mod)
+        batch[:,:,:,1], padding = prepareImage(img, mod)
 
         res = mod(batch) #run once
         t_run = @belapsed $mod($batch);
