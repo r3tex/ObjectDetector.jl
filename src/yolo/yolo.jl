@@ -115,10 +115,10 @@ flip(x) = @view x[end:-1:1, end:-1:1, :, :]
 
 Optimized upsampling without indexing for better GPU performance
 """
-function upsample(a::DenseArray, stride)
+function upsample(a::AbstractArray, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    b = ones(Float32, stride, 1, stride, 1, 1, 1)
+    b = similar(a, stride, 1, stride, 1, 1, 1)
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -189,7 +189,7 @@ end
 mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
     chain::Array{Any, 1}                     # This holds chains of weights and functions
-    W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
+    W::Dict{Int64, AbstractArray}            # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
     uses_gpu::Bool                           # Whether the gpu was requested to be used
 
@@ -374,7 +374,7 @@ mutable struct yolo <: AbstractModel
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            scale = gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
 
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
@@ -382,7 +382,7 @@ mutable struct yolo <: AbstractModel
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            anchor = gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
 
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
@@ -421,11 +421,11 @@ end
 ##### FUNCTIONS FOR INFERENCE ##########################
 ########################################################
 """
-    clipdetect!(input::Array, conf)
+    clipdetect!(input::AbstractArray, conf)
 
 Sets all values under a given threshold to zero
 """
-function clipdetect!(input::Array, conf)
+function clipdetect!(input::AbstractArray, conf)
    rows, cols = size(input)
    for i in 1:cols
        input[5, i] = ifelse(input[5, i] > conf, input[5, i], Float32(0))
@@ -437,7 +437,7 @@ end
 
 Findmax, get the class with highest confidence and class number out.
 """
-function findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
+function findmax!(input::AbstractArray{T}, idst::Int, idend::Int) where {T}
     for i in 1:size(input, 2)
         input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
     end
@@ -445,11 +445,11 @@ end
 
 
 """
-    keepdetections(arr::Array)
+    keepdetections(arr::AbstractArray)
 
 Reduces the size of array and only keeps detections over threshold
 """
-function keepdetections(arr::Array)
+function keepdetections(arr::AbstractArray)
     return arr[:, arr[5, :] .> 0]
 end
 
@@ -473,36 +473,40 @@ function bboxiou(box1, box2)
     return iou
 end
 
-function extend_for_attributes(weights::DenseArray, w, h, bo, ba)
-    return cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
+function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
+    return cat(weights, similar(weights, Float32, w, h, 4, bo, ba), dims = 3)
 end
 
 """
-    (yolo::yolo)(img::DenseArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
+    (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
 Simply pass a batch of images to the yolo object to do inference.
 
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
+function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore]) where {T <: AbstractArray}
     @assert ndims(img) == 4 # width, height, channels, batchsize
     yolo.W[0] = img
 
     # FORWARD PASS
     ##############
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+        if typeof(yolo.W[i]) == T
+            yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+        else
+            yolo.W[i] = T(yolo.chain[i](yolo.W[i-1]))
+        end
     end
 
     # PROCESSING EACH YOLO OUTPUT
     #############################
-    outweights = []
+    outweights = Any[]
     outnr = 0
     @views for out in yolo.out
         outnr += 1
         w, h, a, bo, ba = out[:size]
-        weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
+        weights = reshape(yolo.W[out[:idx]]::T, w, h, a, bo, ba)
         # adjust the predicted box coordinates into pixel values
         weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
         weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
@@ -542,8 +546,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     # PROCESSING ALL PREDICTIONS
     ############################
-
-    batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))::Matrix{Float32}
+    batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
 
     size(batchout, 2) < 2 && return batchout # empty or singular output doesn't need further filtering
 
@@ -551,7 +554,7 @@ function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.
 
     output = perform_detection_nms(batchout, overlapThresh, batchsize)
 
-    return hcat(output...)::Matrix{Float32}
+    return hcat(output...)
 end
 
 """
@@ -564,7 +567,7 @@ the overlap threshold above which boxes are considered duplicates.
 
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
-function nms(dets::Matrix{Float32}, iou_thresh)
+function nms(dets::AbstractArray, iou_thresh)
     # The bounding box coords are in dets[1:4, :].
     # The columns are sorted by score already (descending).
     idxs = collect(1:size(dets, 2))        # candidate column indexes
@@ -611,7 +614,7 @@ run NMS to remove duplicates.
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
 """
 function perform_detection_nms(
-    batchout::Matrix{Float32},
+    batchout,
     overlapThresh,
     batchsize::Int
 )
@@ -620,7 +623,7 @@ function perform_detection_nms(
     #  - detection boxes: det[1:4, i] is the bounding box
     #  - det[5, i] is the confidence/score
 
-    output = Matrix{Float32}[]  # array of matrices
+    output = []  # array of matrices
 
     @views for b in 1:batchsize
         # Get columns that belong to batch b
