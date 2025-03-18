@@ -19,26 +19,29 @@ using AllocArrays
 
 b = BumperAllocator(2^33); # 8.5 GB
 
-batch_aa = AllocArray(batch);
+T = CheckedAllocArray
+# T = AllocArray
+batch_aa = T(batch);
 
 yolomod_b = deepcopy(yolomod)
 function aaize(obj)
     fmap(x -> begin
         x isa AbstractArray || return x
         isbitstype(eltype(x)) || return x
-        return AllocArray(x)
+        return T(x)
     end, obj; exclude=x -> x isa AbstractArray{<:Number} || x isa Function)
 end
 
 yolomod_b.chain = aaize(yolomod_b.chain)
-yolomod_b.W = Dict(k => AllocArray(v) for (k,v) in yolomod_b.W)
+yolomod_b.W = Dict(k => T(v) for (k,v) in yolomod_b.W)
 
 
 function bumper_yolomod(b, args...; kwargs...)
     with_allocator(b) do
-        ret = yolomod_b(args...; kwargs...)
+        _ret = yolomod_b(args...; kwargs...)
+        ret = Array(_ret)
         reset!(b)
-        return copy(ret)
+        return ret
     end
 end
 
