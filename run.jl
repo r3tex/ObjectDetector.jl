@@ -19,8 +19,8 @@ using AllocArrays
 
 b = BumperAllocator(2^33); # 8.5 GB
 
-T = CheckedAllocArray
-# T = AllocArray
+# T = CheckedAllocArray # for testing
+T = AllocArray
 batch_aa = T(batch);
 
 yolomod_b = deepcopy(yolomod)
