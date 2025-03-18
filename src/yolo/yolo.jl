@@ -382,7 +382,9 @@ mutable struct yolo <: AbstractModel
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            x = similar(out, Float32, w*h*2*length(anchormask)*b)
+            x .= 1.0f0
+            anchor = gpu(reshape(x, w, h, 2, length(anchormask), b))
 
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
@@ -439,7 +441,7 @@ Findmax, get the class with highest confidence and class number out.
 """
 function findmax!(input::AbstractArray{T}, idst::Int, idend::Int) where {T}
     for i in 1:size(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
+        input[end-2, i], input[end-1, i] = findmax(@view input[idst:idend, i])
     end
 end
 
@@ -474,7 +476,9 @@ function bboxiou(box1, box2)
 end
 
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
-    return cat(weights, similar(weights, Float32, w, h, 4, bo, ba), dims = 3)
+    x = similar(weights, Float32, w, h, 4, bo, ba)
+    x .= 0f0
+    return cat(weights, x, dims = 3)
 end
 
 """
@@ -491,12 +495,14 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
 
     # FORWARD PASS
     ##############
+    @time "forward pass" begin
     for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        if typeof(yolo.W[i]) == T
+        # if typeof(yolo.W[i]) == T
             yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
-        else
-            yolo.W[i] = T(yolo.chain[i](yolo.W[i-1]))
-        end
+        # else
+            # yolo.W[i] = T(yolo.chain[i](yolo.W[i-1]))
+        # end
+    end
     end
 
     # PROCESSING EACH YOLO OUTPUT
