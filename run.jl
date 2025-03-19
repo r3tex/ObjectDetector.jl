@@ -42,4 +42,4 @@ ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8)
 
 ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8);
 
-ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8, show_timing=true));
+ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8, show_timing=true);
