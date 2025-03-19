@@ -13,7 +13,7 @@ batch = emptybatch(yolomod);
 
 @showtime yolomod(batch, detectThresh=0.5, overlapThresh=0.8);
 
-@showtime yolomod(batch, detectThresh=0.5, overlapThresh=0.8);
+@showtime yolomod(batch, detectThresh=0.5, overlapThresh=0.8, show_timing=true);
 
 using AllocArrays
 
@@ -49,7 +49,7 @@ ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8)
 
 ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8);
 
-ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8);
+ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8, show_timing=true);
 
 
 y = yolomod_b

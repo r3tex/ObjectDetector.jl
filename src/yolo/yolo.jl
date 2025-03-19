@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..AbstractModel, ..getModelInputSize
+import ..to, ..AbstractModel, ..getModelInputSize
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -9,6 +9,7 @@ const models_dir = joinpath(@__DIR__, "models")
 import Flux
 import Flux: gpu, σ
 using LazyArtifacts
+using TimerOutputs
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -490,27 +491,22 @@ Simply pass a batch of images to the yolo object to do inference.
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore]) where {T <: AbstractArray}
+function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false) where {T <: AbstractArray}
+   show_timing && reset_timer!(to)
     @assert ndims(img) == 4 # width, height, channels, batchsize
     yolo.W[0] = img
 
     # FORWARD PASS
     ##############
-    @time "forward pass" begin
-    for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        # if typeof(yolo.W[i]) == T
-            yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
-        # else
-            # yolo.W[i] = T(yolo.chain[i](yolo.W[i-1]))
-        # end
-    end
+    @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
+        @timeit to "layer $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
     end
 
     # PROCESSING EACH YOLO OUTPUT
     #############################
     outweights = Any[]
     outnr = 0
-    @views for out in yolo.out
+    @timeit to "processing outputs" @views for out in yolo.out
         outnr += 1
         w, h, a, bo, ba = out[:size]
         weights = reshape(yolo.W[out[:idx]]::T, w, h, a, bo, ba)
@@ -553,14 +549,24 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
 
     # PROCESSING ALL PREDICTIONS
     ############################
-    batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
+    @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
 
-    size(batchout, 2) < 2 && return batchout # empty or singular output doesn't need further filtering
+    if size(batchout, 2) < 2
+        if show_timing
+            show(to, sortby=:firstexec)
+            println()
+        end
+        return batchout # empty or singular output doesn't need further filtering
+    end
 
     batchsize = yolo.cfg[:batchsize]
 
-    output = perform_detection_nms(batchout, overlapThresh, batchsize)
+    @timeit to "nms" output = perform_detection_nms(batchout, overlapThresh, batchsize)
 
+    if show_timing
+        show(to, sortby=:firstexec)
+        println()
+    end
     return hcat(output...)
 end
 

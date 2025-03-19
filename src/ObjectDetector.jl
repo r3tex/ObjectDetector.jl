@@ -12,6 +12,9 @@ using BenchmarkTools
 using PrettyTables
 using ImageDraw
 using PrecompileTools
+using TimerOutputs
+
+const to = TimerOutput()
 
 abstract type AbstractModel end
 function getModelInputSize end
