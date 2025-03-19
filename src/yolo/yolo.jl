@@ -200,7 +200,7 @@ mutable struct yolo <: AbstractModel
         dummy = isnothing(weightfile)
 
         # make our own shorthand `gpu` function that can be switched on or off
-        gpu(x) = use_gpu ? Flux.gpu(x) : x
+        maybe_gpu(x) = use_gpu ? Flux.gpu(x) : x
 
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
@@ -245,8 +245,8 @@ mutable struct yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
-                push!(stack, gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
+                push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
+                bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, let; _act(x) = act.(x) end)
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
@@ -307,7 +307,7 @@ mutable struct yolo <: AbstractModel
         # PART 2 - THE SKIPS
         ####################
         # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        testimgs = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
@@ -368,14 +368,14 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            offset = maybe_gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            scale = maybe_gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
             scale .= 1.0f0
 
             @views for i in 0:w-1, j in 0:h-1
@@ -386,7 +386,7 @@ mutable struct yolo <: AbstractModel
             # precalculate the anchor shapes to scale up the detection boxes
             x = similar(out, Float32, w*h*2*length(anchormask)*b)
             x .= 1.0f0
-            anchor = gpu(reshape(x, w, h, 2, length(anchormask), b))
+            anchor = maybe_gpu(reshape(x, w, h, 2, length(anchormask), b))
 
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
