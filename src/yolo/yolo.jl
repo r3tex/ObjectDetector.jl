@@ -196,7 +196,7 @@ _cat(val) = x -> cat(x, val, dims = 3)
 ########################################################
 mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
-    chain::Flux.Chain                     # This holds chains of weights and functions
+    chain::Flux.Chain                        # This holds chains of weights and functions
     W::Dict{Int64, AbstractArray}            # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
     uses_gpu::Bool                           # Whether the gpu was requested to be used
