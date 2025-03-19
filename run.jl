@@ -1,8 +1,5 @@
 using ObjectDetector
 
-using Adapt
-
-
 yolomod = YOLO.v3_608_COCO(batch=10, silent=true, use_gpu=false);
 
 yolomod = YOLO.v3_608_COCO(batch=1, silent=true, use_gpu=false);
@@ -14,32 +11,49 @@ batch = emptybatch(yolomod);
 @showtime yolomod(batch, detectThresh=0.5, overlapThresh=0.8);
 
 @showtime yolomod(batch, detectThresh=0.5, overlapThresh=0.8);
+println()
 
-using AllocArrays
+using AllocArrays, Adapt
 
-b = BumperAllocator(2^33); # 8.5 GB
+# TODO- move to AllocArrays?
+"""
+    wrap_model(model; n_bytes=2^33, T=AllocArray)
 
-# T = CheckedAllocArray # for testing
-T = AllocArray
-batch_aa = T(batch);
+Wraps a model to use a bump allocator for temporary arrays. The `n_bytes` of memory will be preallocated upfront once when `wrap_model` is called, and re-used for every batch inferred over. The type `T` can be set to `CheckedAllocArray` for testing purposes.
 
-yolomod_b = deepcopy(yolomod)
-yolomod_b.chain = Adapt.adapt(T, yolomod_b.chain)
-yolomod_b.W = Dict(k => T(v) for (k,v) in yolomod_b.W)
+## Example
 
+```julia
+yolomod = YOLO.v3_608_COCO(batch=1, silent=true, use_gpu=false);
+batch = emptybatch(yolomod);
+@time yolomod(batch) #  0.900718 seconds (6.89 k allocations: 6.295 GiB, 5.53% gc time)
 
-function bumper_yolomod(b, args...; kwargs...)
-    with_allocator(b) do
-        _ret = yolomod_b(args...; kwargs...)
-        ret = Array(_ret)
-        reset!(b)
-        return ret
+# Now let's use our bump allocator
+yolomod_aa = wrap_model(yolomod; T=AllocArray)
+@time yolomod_aa(batch) #  0.857606 seconds (8.74 k allocations: 697.273 KiB)
+
+```
+"""
+function wrap_model(model; n_bytes=2^33, T=AllocArray)
+    b = BumperAllocator(n_bytes)
+    model_aa = Adapt.adapt(T, model)
+    (args...; kw...) -> begin
+        with_allocator(b) do
+            inputs = Adapt.adapt(T, args)
+            ret = Array(model_aa(inputs...; kw...))
+            reset!(b)
+            return ret
+        end
     end
 end
 
-println()
-ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8);
+# T = CheckedAllocArray # for testing
+T = AllocArray
 
-ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8);
+yolomod_aa = wrap_model(yolomod; T)
 
-ret = @showtime bumper_yolomod(b, batch_aa; detectThresh=0.5, overlapThresh=0.8, show_timing=true);
+ret = @showtime yolomod_aa(batch; detectThresh=0.5, overlapThresh=0.8);
+
+ret = @showtime yolomod_aa(batch; detectThresh=0.5, overlapThresh=0.8);
+
+ret = @showtime yolomod_aa(batch; detectThresh=0.5, overlapThresh=0.8, show_timing=true);
