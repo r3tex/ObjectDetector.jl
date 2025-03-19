@@ -3,9 +3,9 @@ using ObjectDetector
 using Functors
 
 
-yolomod = YOLO.v3_608_COCO(batch=10, silent=true);
+yolomod = YOLO.v3_608_COCO(batch=10, silent=true, use_gpu=false);
 
-yolomod = YOLO.v3_608_COCO(batch=1, silent=true);
+yolomod = YOLO.v3_608_COCO(batch=1, silent=true, use_gpu=false);
 
 batch = emptybatch(yolomod);
 
