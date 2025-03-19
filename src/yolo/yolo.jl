@@ -375,6 +375,7 @@ mutable struct yolo <: AbstractModel
 
             # precalculate the scale factor from layer-relative to image-relative
             scale = gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            scale .= 1.0f0
 
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
