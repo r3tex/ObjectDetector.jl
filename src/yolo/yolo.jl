@@ -512,7 +512,12 @@ detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
 function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false) where {T <: AbstractArray}
-   show_timing && reset_timer!(to)
+    if show_timing
+        reset_timer!(to)
+    else
+        disable_timer!(to)
+    end
+
     @assert ndims(img) == 4 # width, height, channels, batchsize
     yolo.W[0] = img
 
