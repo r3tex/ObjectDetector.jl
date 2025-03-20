@@ -210,7 +210,12 @@ mutable struct yolo <: AbstractModel
         dummy = isnothing(weightfile)
 
         # make our own shorthand `gpu` function that can be switched on or off
-        maybe_gpu(x) = use_gpu ? Flux.gpu(x) : x
+        if use_gpu && !(gpu([0f0]) isa Vector{Float32})
+            uses_gpu = true
+        else
+            uses_gpu = false
+        end
+        maybe_gpu(x) = uses_gpu ? gpu(x) : x
 
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
@@ -410,8 +415,8 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        yolomod = new(cfg, Flux.Chain(chainstack), W, out, use_gpu)
-        if use_gpu || disallow_bumper
+        yolomod = new(cfg, Flux.Chain(chainstack), W, out, uses_gpu)
+        if uses_gpu || disallow_bumper
             return yolomod
         else
             allocs = @allocated yolomod(test_batches[1])
