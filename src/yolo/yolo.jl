@@ -191,6 +191,7 @@ _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
 _cat(val) = x -> cat(x, val, dims = 3)
+_maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
@@ -276,7 +277,7 @@ mutable struct yolo <: AbstractModel
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                push!(fn, let; _maxpool(x) = maxpool(x; siz, stride) end)
+                push!(fn, _maxpool(siz, stride))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
