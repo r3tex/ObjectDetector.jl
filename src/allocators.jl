@@ -1,10 +1,17 @@
-struct WrappedModel
+struct AllocWrappedModel
     model::AbstractModel
     allocator
     T
     model_aa
 end
-function (wm::WrappedModel)(args...; kw...)
+function Base.show(io::IO, wm::AllocWrappedModel)
+    println(io, "AllocWrappedModel")
+    println(io, "Model:")
+    println(io, wm.model)
+    println(io, "Allocator:")
+    println(io, wm.allocator)
+end
+function (wm::AllocWrappedModel)(args...; kw...)
     with_allocator(wm.allocator) do
         inputs = Adapt.adapt(wm.T, args)
         ret = Array(wm.model_aa(inputs...; kw...))
@@ -12,10 +19,10 @@ function (wm::WrappedModel)(args...; kw...)
         return ret
     end
 end
-emptybatch(wm::WrappedModel) = emptybatch(wm.model)
-prepareImage(img::AbstractArray, model::WrappedModel) = prepareImage(img, model.model)
-uses_gpu(wm::WrappedModel) = uses_gpu(wm.model)
-drawBoxes(img, wm::WrappedModel, padding, results; kw...) = drawBoxes(img, wm.model, padding, results; kw...)
+emptybatch(wm::AllocWrappedModel) = emptybatch(wm.model)
+prepareImage(img::AbstractArray, model::AllocWrappedModel) = prepareImage(img, model.model)
+uses_gpu(wm::AllocWrappedModel) = uses_gpu(wm.model)
+drawBoxes(img, wm::AllocWrappedModel, padding, results; kw...) = drawBoxes(img, wm.model, padding, results; kw...)
 
 """
     wrap_model(model; n_bytes=2^33, T=AllocArray)
@@ -25,5 +32,5 @@ Wraps a model to use a bump allocator for temporary arrays. The `n_bytes` of mem
 function wrap_model(model; n_bytes=2^33, T=AllocArray)
     b = BumperAllocator(n_bytes)
     model_aa = Adapt.adapt(T, model)
-    return WrappedModel(model, b, T, model_aa)
+    return AllocWrappedModel(model, b, T, model_aa)
 end
