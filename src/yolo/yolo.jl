@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..to, ..AbstractModel, ..getModelInputSize
+import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -179,8 +179,6 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
-uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
-
 function maxpool(x; siz, stride)
     return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
 end
@@ -191,6 +189,7 @@ _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
 _cat(val) = x -> cat(x, val, dims = 3)
+_maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
@@ -206,12 +205,17 @@ mutable struct yolo <: AbstractModel
     yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
         # make our own shorthand `gpu` function that can be switched on or off
-        maybe_gpu(x) = use_gpu ? Flux.gpu(x) : x
+        if use_gpu && !(gpu([0f0]) isa Vector{Float32})
+            uses_gpu = true
+        else
+            uses_gpu = false
+        end
+        maybe_gpu(x) = uses_gpu ? gpu(x) : x
 
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
@@ -276,7 +280,7 @@ mutable struct yolo <: AbstractModel
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                push!(fn, let; _maxpool(x) = maxpool(x; siz, stride) end)
+                push!(fn, _maxpool(siz, stride))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
@@ -317,13 +321,13 @@ mutable struct yolo <: AbstractModel
 
         # PART 2 - THE SKIPS
         ####################
-        # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        # Create test batch. Note that darknet is row-major, so width-first
+        test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
-        W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
+        W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -350,11 +354,10 @@ mutable struct yolo <: AbstractModel
                 end
             end
             push!(chainstack, Flux.Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(testimgs, chainstack[end](testimgs[end])) # run the previous test image
-            push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
+            push!(test_batches, chainstack[end](test_batches[end])) # run the previous test image
+            push!(W, i-1 => copy(test_batches[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
-        testimgs = nothing
         !silent && print("\n\n")
         matrix_sizes_x = [size(v, 1) for (k,v) in W]
         matrix_sizes_y = [size(v, 2) for (k,v) in W]
@@ -412,9 +415,20 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, Flux.Chain(chainstack), W, out, use_gpu)
+        yolomod = new(cfg, Flux.Chain(chainstack), W, out, uses_gpu)
+        if uses_gpu || disallow_bumper
+            return yolomod
+        else
+            allocs = @allocated yolomod(test_batches[1])
+            # FIXME: because the above run is on noise, we don't know how much memory we need for the
+            # final step where allocations increase with detected objects.
+            # Really we should avoid allocs in that step to help set lower than 1.5
+            return wrap_model(yolomod; n_bytes = trunc(Int, allocs * 1.5))
+        end
     end
 end
+
+uses_gpu(y::yolo) = y.uses_gpu
 
 # make yolo `Adapt`-able
 Flux.@layer :ignore yolo
@@ -506,7 +520,12 @@ detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
 function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false) where {T <: AbstractArray}
-   show_timing && reset_timer!(to)
+    if show_timing
+        reset_timer!(to)
+    else
+        disable_timer!(to)
+    end
+
     @assert ndims(img) == 4 # width, height, channels, batchsize
     yolo.W[0] = img
 
