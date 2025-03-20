@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..to, ..AbstractModel, ..getModelInputSize
+import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -206,7 +206,7 @@ mutable struct yolo <: AbstractModel
     yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
@@ -354,7 +354,6 @@ mutable struct yolo <: AbstractModel
             push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
-        testimgs = nothing
         !silent && print("\n\n")
         matrix_sizes_x = [size(v, 1) for (k,v) in W]
         matrix_sizes_y = [size(v, 2) for (k,v) in W]
@@ -412,7 +411,13 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, Flux.Chain(chainstack), W, out, use_gpu)
+        yolomod = new(cfg, Flux.Chain(chainstack), W, out, use_gpu)
+        if use_gpu || disallow_bumper
+            return yolomod
+        else
+            allocs = @allocated yolomod(testimgs[1])
+            return wrap_model(yolomod; n_bytes = trunc(Int, allocs * 1.2))
+        end
     end
 end
 
