@@ -120,6 +120,7 @@ function upsample(a::AbstractArray, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
     b = similar(a, stride, 1, stride, 1, 1, 1)
+    b .= 1f0
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
