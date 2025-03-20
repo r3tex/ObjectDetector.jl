@@ -4,11 +4,11 @@ authors = ["Robert Luciani"]
 version = "0.3.3"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 AllocArrays = "5c00bae2-1499-4716-9206-27f63fd08a44"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
-Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
 ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
 ImageDraw = "4381153b-2b60-58ae-a1ba-fd683676385f"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
@@ -27,11 +27,11 @@ cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 CUDAExt = ["CUDA", "cuDNN"]
 
 [compat]
+Adapt = "4.3.0"
 BenchmarkTools = "0.4, 0.5, 0.6, 0.7, 1.0"
 CUDA = "4, 5"
 FileIO = "1"
 Flux = "0.12, 0.13, 0.14.1, 0.15, 0.16"
-Functors = "0.5.2"
 ImageCore = "0.8, 0.9, 0.10"
 ImageDraw = "0.2"
 ImageFiltering = "0.6, 0.7"

@@ -184,15 +184,25 @@ function maxpool(x; siz, stride)
     return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
 end
 
+_broadcast(act) = x -> act.(x)
+_upsample(stride) = x -> upsample(x, stride)
+_reorg(stride) = x -> reorg(x, stride)
+_route(val) = x -> val
+_add(val) = x -> x + val
+_cat(val) = x -> cat(x, val, dims = 3)
+
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
 mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
-    chain::Array{Any, 1}                     # This holds chains of weights and functions
+    chain::Flux.Chain                        # This holds chains of weights and functions
     W::Dict{Int64, AbstractArray}            # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
     uses_gpu::Bool                           # Whether the gpu was requested to be used
+
+    # for ConstructionBase
+    yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
     yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
@@ -247,19 +257,19 @@ mutable struct yolo <: AbstractModel
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
-                push!(stack, let; _act(x) = act.(x) end)
+                push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
                 !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
             elseif blocktype == :upsample
                 stride = block[:stride]
-                push!(fn, let; _upsample(x) = upsample(x, stride) end) # upsample using Kronecker tensor product
+                push!(fn, _upsample(stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :reorg
                 stride = block[:stride]
-                push!(fn, let; _reorg(x) = reorg(x, stride) end) # reorg (reshape to (w/stride, h/stride, c*stride^2))
+                push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
@@ -328,11 +338,11 @@ mutable struct yolo <: AbstractModel
                     arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
                     if skip_type == :route
-                        fn[j] = let; _route(x) = identity(W[arrayidx]) end
+                        fn[j] = _route(identity(W[arrayidx]))
                     elseif skip_type == :add
-                        fn[j] = let; _add(x) = x + W[arrayidx] end
+                        fn[j] =  _add(W[arrayidx])
                     elseif skip_type == :cat
-                        fn[j] = let; _cat(x) = cat(x, W[arrayidx], dims = 3) end
+                        fn[j] = _cat(W[arrayidx])
                     else
                         error("Unknown skip layer $skip_type")
                     end
@@ -401,9 +411,12 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, chainstack, W, out, use_gpu)
+        return new(cfg, Flux.Chain(chainstack), W, out, use_gpu)
     end
 end
+
+# make yolo `Adapt`-able
+Flux.@layer :ignore yolo
 
 """
     getModelInputSize(model::yolo)
