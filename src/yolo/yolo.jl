@@ -521,6 +521,7 @@ overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
 function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false) where {T <: AbstractArray}
     if show_timing
+        enable_timer!(to)
         reset_timer!(to)
     else
         disable_timer!(to)
