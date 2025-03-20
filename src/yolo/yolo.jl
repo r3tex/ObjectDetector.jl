@@ -316,13 +316,13 @@ mutable struct yolo <: AbstractModel
 
         # PART 2 - THE SKIPS
         ####################
-        # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        # Create test batch. Note that darknet is row-major, so width-first
+        test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
-        W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
+        W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -349,8 +349,8 @@ mutable struct yolo <: AbstractModel
                 end
             end
             push!(chainstack, Flux.Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(testimgs, chainstack[end](testimgs[end])) # run the previous test image
-            push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
+            push!(test_batches, chainstack[end](test_batches[end])) # run the previous test image
+            push!(W, i-1 => copy(test_batches[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
         !silent && print("\n\n")
@@ -414,8 +414,11 @@ mutable struct yolo <: AbstractModel
         if use_gpu || disallow_bumper
             return yolomod
         else
-            allocs = @allocated yolomod(testimgs[1])
-            return wrap_model(yolomod; n_bytes = trunc(Int, allocs * 1.2))
+            allocs = @allocated yolomod(test_batches[1])
+            # FIXME: because the above run is on noise, we don't know how much memory we need for the
+            # final step where allocations increase with detected objects.
+            # Really we should avoid allocs in that step to help set lower than 1.5
+            return wrap_model(yolomod; n_bytes = trunc(Int, allocs * 1.5))
         end
     end
 end

@@ -2,7 +2,7 @@ module CUDAExt
 
 using CUDA
 import Flux
-import ObjectDetector: maxpool, clipdetect!, findmax!, keepdetections, extend_for_attributes, upsample
+import ObjectDetector.YOLO: maxpool, clipdetect!, findmax!, keepdetections, extend_for_attributes, upsample
 
 const CU_FUNCTIONAL = Ref{Bool}()
 
