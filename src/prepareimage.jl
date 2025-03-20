@@ -52,7 +52,7 @@ Loads and prepares (resizes + pads) an image to fit within a given shape.
 Input images should be column-major (julia default), and will be converted to row-major (darknet).
 """
 function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
-    maybe_gpu(x) = model.uses_gpu ? gpu(x) : x
+    maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
     modelInputSize = getModelInputSize(model)
     if ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
         return (maybe_gpu(PermutedDimsArray(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
@@ -76,11 +76,11 @@ function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:Ima
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern; use_gpu = model.uses_gpu)
+        return prepareImage(img, modelInputSize, kern; use_gpu = uses_gpu(model))
     end
 end
 function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
-    maybe_gpu(x) = model.uses_gpu ? gpu(x) : x
+    maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
     modelInputSize = getModelInputSize(model)
     if ndims(img) == 3 && size(img) == modelInputSize[1:3]
         return (maybe_gpu(img), [0,0,0,0])
@@ -94,7 +94,7 @@ function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern; use_gpu = model.uses_gpu)
+        return prepareImage(img, modelInputSize, kern; use_gpu = uses_gpu(model))
     end
 end
 

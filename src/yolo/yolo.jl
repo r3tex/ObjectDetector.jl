@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model
+import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -178,8 +178,6 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     @assert (mod(height, firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of $firstconvfilters"
     return true
 end
-
-uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
 
 function maxpool(x; siz, stride)
     return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
@@ -421,6 +419,8 @@ mutable struct yolo <: AbstractModel
         end
     end
 end
+
+uses_gpu(y::yolo) = y.uses_gpu
 
 # make yolo `Adapt`-able
 Flux.@layer :ignore yolo

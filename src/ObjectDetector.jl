@@ -24,6 +24,8 @@ function getModelInputSize end
 include("prepareimage.jl")
 include("allocators.jl")
 
+function uses_gpu end
+
 ## YOLO models
 include(joinpath(@__DIR__,"yolo","yolo.jl"))
 import .YOLO
