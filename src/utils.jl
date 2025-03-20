@@ -73,7 +73,7 @@ end
 
 Convenient benchmarking
 """
-function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416), use_gpu::Bool = true)
+function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416), kw...)
     pretrained_list = [
                         YOLO.v2_tiny_416_COCO,
                         YOLO.v2_608_COCO,
@@ -90,11 +90,11 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
     table = Array{Any}(undef, length(pretrained_list), 7)
     for (i, pretrained) in pairs(pretrained_list)
         modelname = string(pretrained)
-        @info "Loading and running $modelname with use_gpu=$use_gpu"
+        @info "Loading and running $modelname"
         table[i,:] = [modelname false "-" "-" "-" "-" "-"]
 
         t_load = @elapsed begin
-            mod = pretrained(;silent=true, use_gpu)
+            mod = pretrained(;silent=true, kw...)
         end
         table[i, 2] = true
         table[i, 3] = round(t_load, digits=3)
