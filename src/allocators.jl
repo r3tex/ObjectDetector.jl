@@ -4,6 +4,7 @@ struct WrappedModel
 end
 (wm::WrappedModel)(args...; kw...) = wm.wrapped_model(args...; kw...)
 emptybatch(wm::WrappedModel) = emptybatch(wm.model)
+prepareImage(img::AbstractArray, model::WrappedModel) = prepareImage(img, model.model)
 
 """
     wrap_model(model; n_bytes=2^33, T=AllocArray)
