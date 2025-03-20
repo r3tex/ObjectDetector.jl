@@ -24,17 +24,21 @@ pretrained_list = [
 
 @testset "batch sizes" begin
     IMG = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
-    @testset "Batch size $batch_size" for batch_size in [1, 3]
-        yolomod = YOLO.v3_tiny_416_COCO(batch = batch_size, silent=true)
-        batch = emptybatch(yolomod)
-        @test size(batch) == (416, 416, 3, batch_size)
-        for b in 1:batch_size
-            batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
-        end
-        res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
-        @test size(res) == (89, 4 * batch_size)
-        for b in 2:batch_size
-            @test res[1:end-1, res[end,:] .== 1] == res[1:end-1, res[end,:] .== b]
+    @testset "use_gpu :$use_gpu" for use_gpu in (true, false)
+        @testset "Batch size $batch_size" for batch_size in [1, 3]
+            yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, use_gpu)
+            batch = emptybatch(yolomod)
+            @test size(batch) == (416, 416, 3, batch_size)
+            @test typeof(batch) in (Array{Float32, 4}, CuArray{Float32, 4})
+            for b in 1:batch_size
+                batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
+            end
+            res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
+            @test size(res) == (89, 4 * batch_size)
+            @test typeof(res) == Array{Float32, 2}
+            for b in 2:batch_size
+                @test res[1:end-1, res[end,:] .== 1] == res[1:end-1, res[end,:] .== b]
+            end
         end
     end
 end
