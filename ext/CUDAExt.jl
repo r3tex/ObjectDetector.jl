@@ -50,7 +50,7 @@ function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) 
     return
 end
 
-function maxpool(x::CuArray; siz = 2, stride = 1)
+function maxpool(x::CuArray; siz = 2, stride = 1, kernel = 2)
     if stride == 1 && cu_functional()
         #Asymmetric padding not supported by CuDNN
         x = cat(x, x[:, end:end, :, :], dims = 2)
