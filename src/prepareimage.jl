@@ -52,21 +52,22 @@ Loads and prepares (resizes + pads) an image to fit within a given shape.
 Input images should be column-major (julia default), and will be converted to row-major (darknet).
 """
 function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
+    maybe_gpu(x) = model.uses_gpu ? gpu(x) : x
     modelInputSize = getModelInputSize(model)
     if ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
-        return (gpu(PermutedDimsArray(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
+        return (maybe_gpu(PermutedDimsArray(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 1
-        return (gpu(Float32.(reshape(PermutedDimsArray(channelview(img), [2,1]), modelInputSize...))), [0,0,0,0])
+        return (maybe_gpu(Float32.(reshape(PermutedDimsArray(channelview(img), [2,1]), modelInputSize...))), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 3
         img_chv = channelview(img)
         if ndims(img_chv) == 2
-            return (gpu(Float32.(repeat(reshape(PermutedDimsArray(img_chv, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+            return (maybe_gpu(Float32.(repeat(reshape(PermutedDimsArray(img_chv, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
         elseif size(img_chv, 1) == 1
-            return (gpu(Float32.(repeat(PermutedDimsArray(img_chv, [3,2,1]), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+            return (maybe_gpu(Float32.(repeat(PermutedDimsArray(img_chv, [3,2,1]), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
         elseif size(img_chv, 1) == 3
-            return (gpu(Float32.(PermutedDimsArray(img_chv, [3,2,1]))), [0,0,0,0])
+            return (maybe_gpu(Float32.(PermutedDimsArray(img_chv, [3,2,1]))), [0,0,0,0])
         elseif size(img_chv, 1) == 4
-            return (gpu(Float32.(PermutedDimsArray(view(img_chv,1:3,:,:), [3,2,1]))), [0,0,0,0])
+            return (maybe_gpu(Float32.(PermutedDimsArray(view(img_chv,1:3,:,:), [3,2,1]))), [0,0,0,0])
 
         else
             error("Image element type $(eltype(img)) not supported")
@@ -75,62 +76,70 @@ function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:Ima
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern)
+        return prepareImage(img, modelInputSize, kern; use_gpu = model.uses_gpu)
     end
 end
 function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
+    maybe_gpu(x) = model.uses_gpu ? gpu(x) : x
     modelInputSize = getModelInputSize(model)
     if ndims(img) == 3 && size(img) == modelInputSize[1:3]
-        return (gpu(img), [0,0,0,0])
+        return (maybe_gpu(img), [0,0,0,0])
     elseif ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
-        return (gpu(PermutedDimsArray(img, [3,2,1])), [0,0,0,0])
+        return (maybe_gpu(PermutedDimsArray(img, [3,2,1])), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 1
-        return (gpu(Float32.(reshape(PermutedDimsArray(img, [2,1]), modelInputSize...))), [0,0,0,0])
+        return (maybe_gpu(Float32.(reshape(PermutedDimsArray(img, [2,1]), modelInputSize...))), [0,0,0,0])
     elseif ndims(img) == 2 && size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 3
-        return (gpu(Float32.(repeat(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
+        return (maybe_gpu(Float32.(repeat(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,modelInputSize[3]]))), [0,0,0,0])
     else
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern)
+        return prepareImage(img, modelInputSize, kern; use_gpu = model.uses_gpu)
     end
 end
 
-function prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple)
+function prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple; use_gpu::Bool=true)
+    maybe_gpu(x) = use_gpu ? gpu(x) : x
     img_size = size(img)[[2,1]]
     img_resized_size = sizethatfits(img_size, modelInputSize)
     kern = resizekern(img_size, img_resized_size)
-    return prepareImage!(gpu(zeros(Float32, modelInputSize[1:3])), img, kern)
+    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
 end
 
-prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple, kern) =
-    prepareImage!(gpu(zeros(Float32, modelInputSize[1:3])), img, kern)
+function prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple, kern; use_gpu::Bool=true)
+    maybe_gpu(x) = use_gpu ? gpu(x) : x
+    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
+end
 
-prepareImage(img::AbstractArray{T}, modelInputSize::Tuple, kern) where {T<:ImageCore.Colorant} =
-    prepareImage!(gpu(zeros(Float32, modelInputSize[1:3])), img, kern)
+function prepareImage(img::AbstractArray{T}, modelInputSize::Tuple, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
+    maybe_gpu(x) = use_gpu ? gpu(x) : x
+    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
+end
 
-function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Float32}, kern)
+function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Float32}, kern; use_gpu::Bool=true)
+    maybe_gpu(x) = use_gpu ? gpu(x) : x
     #TODO: Make this multiple-dispatchy
     if ndims(img) == 3 && size(img) == size(dest_arr)
-        return (gpu(img), [0,0,0,0])
+        return (maybe_gpu(img), [0,0,0,0])
     elseif ndims(img) == 3 && size(img)[[2,1,3]] == size(dest_arr)
-        return (gpu(PermutedDimsArray(img, [2,1,3])), [0,0,0,0])
+        return (maybe_gpu(PermutedDimsArray(img, [2,1,3])), [0,0,0,0])
     elseif ndims(img) == 2 && size(img)[[2,1]] == size(dest_arr)[1:2]
-        return (gpu(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img, 1), 1)))
+        return (maybe_gpu(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img, 1), 1)))
     elseif ndims(img) == 2
-        return prepareImage!(dest_arr, colorview(Gray, img), kern)
+        return prepareImage!(dest_arr, colorview(Gray, img), kern; use_gpu)
     elseif size(img, 1) == 1
-        return prepareImage!(dest_arr, colorview(Gray, img)[1,:,:], kern)
+        return prepareImage!(dest_arr, colorview(Gray, img)[1,:,:], kern; use_gpu)
     elseif size(img, 3) == 1
-        return prepareImage!(dest_arr, colorview(Gray, img)[:,:,1], kern)
+        return prepareImage!(dest_arr, colorview(Gray, img)[:,:,1], kern; use_gpu)
     elseif size(img, 3) == 3
-        return prepareImage!(dest_arr, colorview(RGB, PermutedDimsArray(img, [3,1,2])), kern)
+        return prepareImage!(dest_arr, colorview(RGB, PermutedDimsArray(img, [3,1,2])), kern; use_gpu)
     else
         error("Array needs to match dimensions exactly, or 3rd dim should be of length 1 or 3 to allow colortype transformations")
     end
 end
 
-function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
+function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
+    maybe_gpu(x) = use_gpu ? gpu(x) : x
     # @show typeof(img), size(img)
     imgPerm = PermutedDimsArray(img, [2,1])  # Convert from column-major (julia default) to row-major (darknet)
 
@@ -168,7 +177,7 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, 
             img_ready = Float32.(repeat(PermutedDimsArray(img_chv, [1,2]), outer = [1, 1, size(dest_arr,3)]))
         end
     end
-    target_img_subregion .= gpu(img_ready)
+    target_img_subregion .= maybe_gpu(img_ready)
     scaled_padding = padding ./ size(dest_arr)[[1,2,1,2]]
     return (dest_arr, scaled_padding)
 end
