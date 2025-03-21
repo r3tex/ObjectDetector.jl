@@ -1,7 +1,7 @@
 module YOLO
-export getModelInputSize
+export get_input_size
 
-import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu, ..get_cfg
+import ..to, ..AbstractModel, ..get_input_size, ..wrap_model, ..uses_gpu, ..get_cfg
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -432,11 +432,11 @@ get_cfg(y::yolo) = y.cfg
 Flux.@layer :ignore yolo
 
 """
-    getModelInputSize(model::yolo)
+    get_input_size(model::yolo)
 
 Returns model size tuple in (width, height, channels, batchsize) order (row-major)
 """
-getModelInputSize(model::yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
+get_input_size(model::yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
 
 function Base.show(io::IO, yolo::yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))

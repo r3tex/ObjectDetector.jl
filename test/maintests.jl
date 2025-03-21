@@ -29,7 +29,7 @@ pretrained_list = [
             yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, use_gpu)
             batch = emptybatch(yolomod)
             @test size(batch) == (416, 416, 3, batch_size)
-            @test ObjectDetector.getModelInputSize(yolomod) == size(batch)
+            @test ObjectDetector.get_input_size(yolomod) == size(batch)
             @test typeof(batch) in (Array{Float32, 4}, CuArray{Float32, 4, CUDA.DeviceMemory})
             for b in 1:batch_size
                 batch[:, :, :, b], padding = prepareImage(IMG, yolomod)

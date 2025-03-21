@@ -53,7 +53,7 @@ Input images should be column-major (julia default), and will be converted to ro
 """
 function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
     maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
-    modelInputSize = getModelInputSize(model)
+    modelInputSize = get_input_size(model)
     if ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
         return (maybe_gpu(PermutedDimsArray(Float32.(channelview(img)), [3,2,1])), [0,0,0,0])
     elseif size(img)[[2,1]] == modelInputSize[1:2] && modelInputSize[3] == 1
@@ -81,7 +81,7 @@ function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:Ima
 end
 function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
     maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
-    modelInputSize = getModelInputSize(model)
+    modelInputSize = get_input_size(model)
     if ndims(img) == 3 && size(img) == modelInputSize[1:3]
         return (maybe_gpu(img), [0,0,0,0])
     elseif ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]

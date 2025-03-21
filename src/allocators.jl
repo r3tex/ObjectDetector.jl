@@ -27,7 +27,7 @@ prepareImage(img::AbstractArray, model::AllocWrappedModel) = prepareImage(img, m
 uses_gpu(wm::AllocWrappedModel) = uses_gpu(wm.model)
 get_cfg(wm::AllocWrappedModel) = get_cfg(wm.model)
 drawBoxes(img, wm::AllocWrappedModel, padding, results; kw...) = drawBoxes(img, wm.model, padding, results; kw...)
-getModelInputSize(wm::AllocWrappedModel) = getModelInputSize(wm.model)
+get_input_size(wm::AllocWrappedModel) = get_input_size(wm.model)
 
 """
     wrap_model(model; n_bytes=2^33, T=AllocArray)
