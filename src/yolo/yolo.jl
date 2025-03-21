@@ -656,20 +656,25 @@ end
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
 group them by class, sort each group by the 5th column (score) descending, and
-run NMS to remove duplicates.
+run NMS to remove duplicates using bboxiou and overlapThresh.
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
+
+The input `batchout` is a 2D array of shape (num_fields, N), where `N` is the
+total number of detections across all batches.
+
+batchout rows:
+- 1-4: the bounding box coordinates x1, y1, x2, y2
+- 5: the confidence/score.
+- scores for each class
+- second-to-last row (end-1) has the class index.
+- The last row is the batch index
 """
 function perform_detection_nms(
     batchout,
     overlapThresh,
     batchsize::Int
 )
-    #  - batchout’s last row (end) has the batch index
-    #  - batchout’s second-to-last row (end-1) has the class index
-    #  - detection boxes: det[1:4, i] is the bounding box
-    #  - det[5, i] is the confidence/score
-
     output = []  # array of matrices
 
     @views for b in 1:batchsize
