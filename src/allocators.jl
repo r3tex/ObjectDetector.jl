@@ -18,6 +18,7 @@ function (wm::AllocWrappedModel)(args...; kw...)
             ret = Array(wm.model_aa(inputs...; kw...))
             return ret
         finally
+            wm.model.W = adapt(Array, wm.model.W) # internal store W must be adapted back to Array
             reset!(wm.allocator)
         end
     end
