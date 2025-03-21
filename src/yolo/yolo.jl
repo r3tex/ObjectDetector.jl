@@ -10,6 +10,7 @@ import Flux
 import Flux: gpu, σ
 using LazyArtifacts
 using TimerOutputs
+using Profile
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -419,10 +420,12 @@ mutable struct yolo <: AbstractModel
         if uses_gpu || disallow_bumper
             return yolomod
         else
+            # call once to compile and avoid counting compilation related allocs
+            yolomod(test_batches[1], detectThresh = 0.0, overlapThresh = 1.0)
             # intentionally max out the number of detections here, to generate max memory usage
             allocs = @allocated ret = yolomod(test_batches[1], detectThresh = 0.0, overlapThresh = 1.0)
-            n_bytes = trunc(Int, allocs * 1.1) # a little buffer
-            @debug "Setting allocator memory limit to $(n_bytes) bytes ($(Base.format_bytes(n_bytes))) based on detecting a max %(size(ret,2)) objects"
+            n_bytes = trunc(Int, allocs * 1.2) # a little safety buffer
+            @debug "Setting allocator memory limit to $(n_bytes) bytes ($(Base.format_bytes(n_bytes))) based on detecting a max $(size(ret,2)) objects"
             return wrap_model(yolomod; n_bytes)
         end
     end
@@ -519,89 +522,97 @@ Simply pass a batch of images to the yolo object to do inference.
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false) where {T <: AbstractArray}
+function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)
     else
         disable_timer!(to)
     end
+    @timeit to "yolo" begin
+        @assert ndims(img) == 4 # width, height, channels, batchsize
+        yolo.W[0] = img
 
-    @assert ndims(img) == 4 # width, height, channels, batchsize
-    yolo.W[0] = img
-
-    # FORWARD PASS
-    ##############
-    @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        @timeit to "layer $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
-    end
-
-    # PROCESSING EACH YOLO OUTPUT
-    #############################
-    outweights = Any[]
-    outnr = 0
-    @timeit to "processing outputs" @views for out in yolo.out
-        outnr += 1
-        w, h, a, bo, ba = out[:size]
-        weights = reshape(yolo.W[out[:idx]]::T, w, h, a, bo, ba)
-        # adjust the predicted box coordinates into pixel values
-        weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
-        weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
-
-        cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
-
-        # Convert to image width & height scale (0.0-1.0)
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
-        if yolo.cfg[:yoloversion] == 2
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
-        else
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+        # FORWARD PASS
+        ##############
+        @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
+            @timeit to "layer $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
         end
 
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+        # PROCESSING EACH YOLO OUTPUT
+        #############################
+        @timeit to "post-processing" begin
+            outweights = Any[]
+            outnr = 0
+            @timeit to "processing outputs" @views for out in yolo.out
+                outnr += 1
+                w, h, a, bo, ba = out[:size]
+                weights = reshape(yolo.W[out[:idx]]::T, w, h, a, bo, ba)
+                # adjust the predicted box coordinates into pixel values
+                weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
+                weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
-        # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
-        weights = extend_for_attributes(weights, w, h, bo, ba)
+                cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
-        weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
-        for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
-        weights = reshape(weights, a+4, :) # reshape to attr, data
+                # Convert to image width & height scale (0.0-1.0)
+                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
+                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+                if yolo.cfg[:yoloversion] == 2
+                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
+                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+                else
+                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+                end
 
-        thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
-        findmax!(weights, 6, a)
-        push!(outweights, weights)
-    end
+                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
+                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
+                weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+                weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
-    # PROCESSING ALL PREDICTIONS
-    ############################
-    @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
+                # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
+                weights = extend_for_attributes(weights, w, h, bo, ba)
 
-    if size(batchout, 2) < 2
-        if show_timing
-            show(to, sortby=:firstexec)
-            println()
+                weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
+                for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
+                weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
+                weights = reshape(weights, a+4, :) # reshape to attr, data
+
+                thresh = detectThresh === nothing ? Float32(out[:truth]) : Float32(detectThresh)
+                clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
+                findmax!(weights, 6, a)
+                push!(outweights, weights)
+            end
+
+            # PROCESSING ALL PREDICTIONS
+            ############################
+            @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
+
+            if size(batchout, 2) < 2
+                if show_timing
+                    show(to, sortby=:firstexec)
+                    println()
+                end
+                ret = batchout # empty or singular output doesn't need further filtering
+            else
+                batchsize = yolo.cfg[:batchsize]
+                @timeit to "nms" if profile
+                    Profile.Allocs.clear()
+                    Profile.Allocs.@profile sample_rate=1.0 output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    Profile.Allocs.print()
+                else
+                    output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                end
+                ret = hcat(output...)
+            end
         end
-        return batchout # empty or singular output doesn't need further filtering
     end
-
-    batchsize = yolo.cfg[:batchsize]
-
-    @timeit to "nms" output = perform_detection_nms(batchout, overlapThresh, batchsize)
-
     if show_timing
         show(to, sortby=:firstexec)
         println()
     end
-    return hcat(output...)
+    return ret
 end
 
 """

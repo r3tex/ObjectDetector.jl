@@ -13,10 +13,13 @@ function Base.show(io::IO, wm::AllocWrappedModel)
 end
 function (wm::AllocWrappedModel)(args...; kw...)
     with_allocator(wm.allocator) do
-        inputs = Adapt.adapt(wm.T, args)
-        ret = Array(wm.model_aa(inputs...; kw...))
-        reset!(wm.allocator)
-        return ret
+        try
+            inputs = Adapt.adapt(wm.T, args)
+            ret = Array(wm.model_aa(inputs...; kw...))
+            return ret
+        finally
+            reset!(wm.allocator)
+        end
     end
 end
 emptybatch(wm::AllocWrappedModel) = emptybatch(wm.model)
