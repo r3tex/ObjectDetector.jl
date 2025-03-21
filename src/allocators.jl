@@ -33,8 +33,8 @@ getModelInputSize(wm::AllocWrappedModel) = getModelInputSize(wm.model)
 
 Wraps a model to use a bump allocator for temporary arrays. The `n_bytes` of memory will be preallocated upfront once when `wrap_model` is called, and re-used for every batch inferred over. The type `T` can be set to `CheckedAllocArray` for testing purposes.
 """
-function wrap_model(model; n_bytes=2^33, T=AllocArray)
-    b = BumperAllocator(n_bytes)
+function wrap_model(model; T=AllocArray)
+    b = BumperAllocator()
     model_aa = Adapt.adapt(T, model)
     return AllocWrappedModel(model, b, T, model_aa)
 end
