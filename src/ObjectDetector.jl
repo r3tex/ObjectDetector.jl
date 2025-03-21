@@ -25,6 +25,7 @@ include("prepareimage.jl")
 include("allocators.jl")
 
 function uses_gpu end
+function get_cfg end
 
 ## YOLO models
 include(joinpath(@__DIR__,"yolo","yolo.jl"))

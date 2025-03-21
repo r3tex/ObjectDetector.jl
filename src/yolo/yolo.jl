@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu
+import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu, ..get_cfg
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -426,6 +426,7 @@ mutable struct yolo <: AbstractModel
 end
 
 uses_gpu(y::yolo) = y.uses_gpu
+get_cfg(y::yolo) = y.cfg
 
 # make yolo `Adapt`-able
 Flux.@layer :ignore yolo
