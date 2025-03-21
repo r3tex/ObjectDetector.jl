@@ -540,7 +540,11 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
         # FORWARD PASS
         ##############
         @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
-            @timeit to "layer $i" store_layer!(yolo.W, i, yolo.chain[i](yolo.W[i-1]))
+            @timeit to "layer $i" begin
+                f = yolo.chain[i]
+                out = f(yolo.W[i-1])
+                store_layer!(yolo.W, i, out)
+            end
         end
 
         # PROCESSING EACH YOLO OUTPUT

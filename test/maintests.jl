@@ -35,8 +35,11 @@ pretrained_list = [
                 batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
             end
             res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
-            @test size(res) == (89, 4 * batch_size)
+            expected_objects = 4
+            @test size(res) == (89, expected_objects * batch_size)
             @test typeof(res) == Array{Float32, 2}
+
+            # test that all batch results are the same
             for b in 2:batch_size
                 @test res[1:end-1, res[end,:] .== 1] == res[1:end-1, res[end,:] .== b]
             end
