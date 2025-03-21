@@ -28,13 +28,13 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 """
-    drawBoxes(img::Array, model::YOLO.Yolo, padding::Array, results)
-    drawBoxes(img::Array, model::YOLO.Yolo, padding::Array, results)
+    draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
+    draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
 
 Draw boxes on image for each BBOX result.
 """
-drawBoxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
-function drawBoxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true)
+draw_boxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true) = draw_boxes!(copy(img), model, padding, results, transpose=transpose)
+function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]

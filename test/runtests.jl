@@ -8,4 +8,4 @@ using cuDNN
 
 include("prepare_image.jl")
 include("maintests.jl")
-include("drawBoxes.jl")
+include("draw_boxes.jl")

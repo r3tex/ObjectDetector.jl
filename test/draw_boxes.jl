@@ -8,7 +8,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -19,7 +19,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -30,7 +30,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -43,7 +43,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -54,7 +54,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -67,7 +67,7 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
@@ -78,14 +78,14 @@
     batch = emptybatch(yolomod)
     batch[:,:,:,1], padding = prepare_image(img, yolomod)
     res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
-    imgboxes = drawBoxes(img, yolomod, padding, res)
+    imgboxes = draw_boxes(img, yolomod, padding, res)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))
     @test all(imgboxes[:,end] .== Gray(0))
 
     ## Non-transposed
-    imgboxes = drawBoxes(collect(img'), yolomod, padding, res, transpose=false)
+    imgboxes = draw_boxes(collect(img'), yolomod, padding, res, transpose=false)
     @test all(imgboxes[1,:] .== Gray(0))
     @test all(imgboxes[:,1] .== Gray(0))
     @test all(imgboxes[end,:] .== Gray(0))

@@ -12,10 +12,10 @@ save(joinpath(@__DIR__,"result.png"), cpu(batch[:,:,:,1]))
 
 @time res = yolomod(batch, detectThresh=0.2, overlapThresh=0.8) # Run the model on the length-1 batch
 
-imgBoxes = drawBoxes(img, yolomod, padding, res)
+imgBoxes = draw_boxes(img, yolomod, padding, res)
 save(joinpath(@__DIR__,"result.png"), imgBoxes)
 
-imgBoxes = drawBoxes(collect(img'), yolomod, padding, res, transpose=false)
+imgBoxes = draw_boxes(collect(img'), yolomod, padding, res, transpose=false)
 save(joinpath(@__DIR__,"result_transposed.png"), imgBoxes)
 
 ObjectDetector.benchmark()
@@ -29,7 +29,7 @@ batch[:,:,:,1], padding = prepare_image(img, yolomod)
 
 res = collect([ padding[1] padding[2] 1.0-padding[3] 1.0-padding[4] 0.0 0.0;]') #note the transpose!
 
-imgboxes = drawBoxes(img, yolomod, padding, res)
+imgboxes = draw_boxes(img, yolomod, padding, res)
 save(joinpath(@__DIR__, "test.png"), imgboxes)
 all(imgboxes[1,:] .== Gray(0))
 all(imgboxes[:,1] .== Gray(0))
