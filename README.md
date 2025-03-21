@@ -55,7 +55,7 @@ yolomod = YOLO.v3_608_COCO(batch=1, disable_bumper=true)
 
 ### Visualizing the result
 ```julia
-imgBoxes = drawBoxes(img, yolomod, padding, res)
+imgBoxes = draw_boxes(img, yolomod, padding, res)
 save("result.png", imgBoxes)
 ```
 ![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.png)

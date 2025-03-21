@@ -99,7 +99,7 @@ for (k, pretrained) in pairs(pretrained_list)
             @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
 
             resfile = joinpath(resultsdir,"$(modelname).png")
-            @test_reference resfile drawBoxes(IMG, yolomod, padding, res)
+            @test_reference resfile draw_boxes(IMG, yolomod, padding, res)
             @info "$modelname: View result: $resfile"
 
         end

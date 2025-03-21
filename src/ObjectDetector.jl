@@ -1,6 +1,6 @@
 module ObjectDetector
 export YOLO
-export prepare_image, prepare_image!, resizekern, sizethatfits, emptybatch, drawBoxes
+export prepare_image, prepare_image!, resizekern, sizethatfits, emptybatch, draw_boxes
 
 import Flux.gpu
 
