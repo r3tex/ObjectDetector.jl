@@ -436,7 +436,7 @@ Flux.@layer :ignore yolo
 
 Returns model size tuple in (width, height, channels, batchsize) order (row-major)
 """
-getModelInputSize(model::yolo) = (model.cfg[:width], model.cfg[:height], model.cfg[:channels], model.cfg[:batchsize])
+getModelInputSize(model::yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
 
 function Base.show(io::IO, yolo::yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))

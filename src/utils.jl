@@ -37,10 +37,10 @@ drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results;
 function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
-        modelratio = model.cfg[:width] / model.cfg[:height]
+        modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
         x1i, y1i, x2i, y2i = [1, 2, 3, 4]
     else
-        modelratio = model.cfg[:height] / model.cfg[:width]
+        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
         x1i, y1i, x2i, y2i = [2, 1, 4, 3]
     end
     if modelratio > imgratio
