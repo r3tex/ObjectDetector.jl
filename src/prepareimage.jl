@@ -43,15 +43,15 @@ function getpadding(size_inner, size_outer)
 end
 
 """
-    prepareImage(img::AbstractArray{T}, model::U) where {T<:ImageCore.Colorant, U<:AbstractModel}
-    prepareImage(img::AbstractArray{T}, img_resized_size::Tuple, kern) where {T<:ImageCore.Colorant}
-    prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:Real}
-    prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
+    prepare_image(img::AbstractArray{T}, model::U) where {T<:ImageCore.Colorant, U<:AbstractModel}
+    prepare_image(img::AbstractArray{T}, img_resized_size::Tuple, kern) where {T<:ImageCore.Colorant}
+    prepare_image!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:Real}
+    prepare_image!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern) where {T<:ImageCore.Colorant}
 
 Loads and prepares (resizes + pads) an image to fit within a given shape.
 Input images should be column-major (julia default), and will be converted to row-major (darknet).
 """
-function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
+function prepare_image(img::AbstractArray{T}, model::AbstractModel) where {T<:ImageCore.Colorant}
     maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
     modelInputSize = get_input_size(model)
     if ndims(img) == 3 && size(img)[[3,2,1]] == modelInputSize[1:3]
@@ -76,10 +76,10 @@ function prepareImage(img::AbstractArray{T}, model::AbstractModel) where {T<:Ima
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern; use_gpu = uses_gpu(model))
+        return prepare_image(img, modelInputSize, kern; use_gpu = uses_gpu(model))
     end
 end
-function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
+function prepare_image(img::AbstractArray{Float32}, model::AbstractModel)
     maybe_gpu(x) = uses_gpu(model) ? gpu(x) : x
     modelInputSize = get_input_size(model)
     if ndims(img) == 3 && size(img) == modelInputSize[1:3]
@@ -94,29 +94,29 @@ function prepareImage(img::AbstractArray{Float32}, model::AbstractModel)
         img_size = size(img)[[2,1]]
         img_resized_size = sizethatfits(img_size, modelInputSize)
         kern = resizekern(img_size, img_resized_size)
-        return prepareImage(img, modelInputSize, kern; use_gpu = uses_gpu(model))
+        return prepare_image(img, modelInputSize, kern; use_gpu = uses_gpu(model))
     end
 end
 
-function prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple; use_gpu::Bool=true)
+function prepare_image(img::AbstractArray{Float32}, modelInputSize::Tuple; use_gpu::Bool=true)
     maybe_gpu(x) = use_gpu ? gpu(x) : x
     img_size = size(img)[[2,1]]
     img_resized_size = sizethatfits(img_size, modelInputSize)
     kern = resizekern(img_size, img_resized_size)
-    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
+    return prepare_image!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
 end
 
-function prepareImage(img::AbstractArray{Float32}, modelInputSize::Tuple, kern; use_gpu::Bool=true)
+function prepare_image(img::AbstractArray{Float32}, modelInputSize::Tuple, kern; use_gpu::Bool=true)
     maybe_gpu(x) = use_gpu ? gpu(x) : x
-    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
+    return prepare_image!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
 end
 
-function prepareImage(img::AbstractArray{T}, modelInputSize::Tuple, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
+function prepare_image(img::AbstractArray{T}, modelInputSize::Tuple, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
     maybe_gpu(x) = use_gpu ? gpu(x) : x
-    return prepareImage!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
+    return prepare_image!(maybe_gpu(zeros(Float32, modelInputSize[1:3])), img, kern; use_gpu)
 end
 
-function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Float32}, kern; use_gpu::Bool=true)
+function prepare_image!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Float32}, kern; use_gpu::Bool=true)
     maybe_gpu(x) = use_gpu ? gpu(x) : x
     #TODO: Make this multiple-dispatchy
     if ndims(img) == 3 && size(img) == size(dest_arr)
@@ -126,19 +126,19 @@ function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Floa
     elseif ndims(img) == 2 && size(img)[[2,1]] == size(dest_arr)[1:2]
         return (maybe_gpu(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img, 1), 1)))
     elseif ndims(img) == 2
-        return prepareImage!(dest_arr, colorview(Gray, img), kern; use_gpu)
+        return prepare_image!(dest_arr, colorview(Gray, img), kern; use_gpu)
     elseif size(img, 1) == 1
-        return prepareImage!(dest_arr, colorview(Gray, img)[1,:,:], kern; use_gpu)
+        return prepare_image!(dest_arr, colorview(Gray, img)[1,:,:], kern; use_gpu)
     elseif size(img, 3) == 1
-        return prepareImage!(dest_arr, colorview(Gray, img)[:,:,1], kern; use_gpu)
+        return prepare_image!(dest_arr, colorview(Gray, img)[:,:,1], kern; use_gpu)
     elseif size(img, 3) == 3
-        return prepareImage!(dest_arr, colorview(RGB, PermutedDimsArray(img, [3,1,2])), kern; use_gpu)
+        return prepare_image!(dest_arr, colorview(RGB, PermutedDimsArray(img, [3,1,2])), kern; use_gpu)
     else
         error("Array needs to match dimensions exactly, or 3rd dim should be of length 1 or 3 to allow colortype transformations")
     end
 end
 
-function prepareImage!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
+function prepare_image!(dest_arr::AbstractArray{Float32}, img::AbstractArray{T}, kern; use_gpu::Bool=true) where {T<:ImageCore.Colorant}
     maybe_gpu(x) = use_gpu ? gpu(x) : x
     # @show typeof(img), size(img)
     imgPerm = PermutedDimsArray(img, [2,1])  # Convert from column-major (julia default) to row-major (darknet)

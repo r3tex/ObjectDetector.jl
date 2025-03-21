@@ -32,7 +32,7 @@ pretrained_list = [
             @test ObjectDetector.get_input_size(yolomod) == size(batch)
             @test typeof(batch) in (Array{Float32, 4}, CuArray{Float32, 4, CUDA.DeviceMemory})
             for b in 1:batch_size
-                batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
+                batch[:, :, :, b], padding = prepare_image(IMG, yolomod)
             end
             res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
             @test size(res) == (89, 4 * batch_size)
@@ -49,7 +49,7 @@ end
         IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
         batch = emptybatch(yolomod)
-        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+        batch[:,:,:,1], padding = prepare_image(IMG, yolomod)
         res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
         @test size(res,2) > 0
     end
@@ -85,7 +85,7 @@ for (k, pretrained) in pairs(pretrained_list)
             IMG = load(joinpath(@__DIR__,"images","$imagename.png"))
             resultsdir = joinpath(@__DIR__,"results",imagename)
             mkpath(resultsdir)
-            batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+            batch[:,:,:,1], padding = prepare_image(IMG, yolomod)
 
             val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
             @test size(res,2) > 0

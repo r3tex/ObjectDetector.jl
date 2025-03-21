@@ -100,7 +100,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         table[i, 3] = round(t_load, digits=3)
 
         batch = emptybatch(mod)
-        batch[:,:,:,1], padding = prepareImage(img, mod)
+        batch[:,:,:,1], padding = prepare_image(img, mod)
 
         res = mod(batch) #run once
         t_run = @belapsed $mod($batch);
