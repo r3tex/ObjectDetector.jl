@@ -4,7 +4,7 @@
 Create an empty batched input array on the GPU if available.
 """
 function emptybatch(model::T) where {T<:AbstractModel}
-    modelInputSize = getModelInputSize(model)
+    modelInputSize = get_input_size(model)
     batch = zeros(Float32, modelInputSize...)
     if uses_gpu(model)
         gpu(batch)

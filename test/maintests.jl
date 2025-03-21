@@ -30,7 +30,7 @@ expected_result = Float32[0.9061836 0.90347874 0.86342007 0.25070268; 0.06912026
             yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, disallow_bumper)
             batch = emptybatch(yolomod)
             @test size(batch) == (416, 416, 3, batch_size)
-            @test ObjectDetector.getModelInputSize(yolomod) == size(batch)
+            @test ObjectDetector.get_input_size(yolomod) == size(batch)
             @test typeof(batch) in (Array{Float32, 4}, CuArray{Float32, 4, CUDA.DeviceMemory})
             for b in 1:batch_size
                 batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
