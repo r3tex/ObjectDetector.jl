@@ -6,6 +6,6 @@ using ReferenceTests
 using CUDA
 using cuDNN
 
-include("prepareImage.jl")
+include("prepare_image.jl")
 include("maintests.jl")
 include("drawBoxes.jl")
