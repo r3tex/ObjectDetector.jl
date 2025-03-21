@@ -531,7 +531,7 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
         # FORWARD PASS
         ##############
         @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
-            @timeit to "layer $i" yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+            @timeit to "layer $i" yolo.W[i] = yolo.chain[i](yolo.W[i-1])
         end
 
         # PROCESSING EACH YOLO OUTPUT
@@ -542,7 +542,7 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             @timeit to "processing outputs" @views for out in yolo.out
                 outnr += 1
                 w, h, a, bo, ba = out[:size]
-                weights = reshape(yolo.W[out[:idx]]::T, w, h, a, bo, ba)
+                weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
                 # adjust the predicted box coordinates into pixel values
                 weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
                 weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
