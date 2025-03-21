@@ -195,7 +195,7 @@ _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
-mutable struct yolo <: AbstractModel
+mutable struct Yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
     chain::Flux.Chain                        # This holds chains of weights and functions
     W::Dict{Int64, AbstractArray}            # This holds arrays that the model writes to
@@ -203,10 +203,10 @@ mutable struct yolo <: AbstractModel
     uses_gpu::Bool                           # Whether the gpu was requested to be used
 
     # for ConstructionBase
-    yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
+    Yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false) = begin
+    Yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
@@ -425,20 +425,20 @@ mutable struct yolo <: AbstractModel
     end
 end
 
-uses_gpu(y::yolo) = y.uses_gpu
-get_cfg(y::yolo) = y.cfg
+uses_gpu(y::Yolo) = y.uses_gpu
+get_cfg(y::Yolo) = y.cfg
 
 # make yolo `Adapt`-able
-Flux.@layer :ignore yolo
+Flux.@layer :ignore Yolo
 
 """
-    get_input_size(model::yolo)
+    get_input_size(model::Yolo)
 
 Returns model size tuple in (width, height, channels, batchsize) order (row-major)
 """
-get_input_size(model::yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
+get_input_size(model::Yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
 
-function Base.show(io::IO, yolo::yolo)
+function Base.show(io::IO, yolo::Yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
     ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
@@ -510,14 +510,14 @@ function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
 end
 
 """
-    (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
+    (yolo::Yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
 Simply pass a batch of images to the yolo object to do inference.
 
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
+function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)

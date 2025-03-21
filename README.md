@@ -98,14 +98,14 @@ YOLO.v3_tiny_416_COCO()
 
 Or custom models can be loaded with:
 ```julia
-YOLO.yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch size.
+YOLO.Yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch size.
 ```
 
 For instance the pretrained models are defined as:
 ```julia
 function v3_COCO(;batch=1, silent=false, cfgchanges=nothing, w=416, h=416)
     cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)]
-    yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
+    Yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
 end
 ```
 
