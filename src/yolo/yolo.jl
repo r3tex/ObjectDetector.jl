@@ -11,6 +11,7 @@ import Flux: gpu, σ
 using LazyArtifacts
 using TimerOutputs
 using Profile
+using AllocArrays: AllocArray
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -509,6 +510,14 @@ function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     return cat(weights, x, dims = 3)
 end
 
+function store_layer!(layers, i, new::AllocArray)
+    # with an AllocArray we must overwrite as it is forbidden to write to old memory
+    layers[i] = new
+end
+function store_layer!(layers, i, new)
+    layers[i] .= new
+end
+
 """
     (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
@@ -531,7 +540,7 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
         # FORWARD PASS
         ##############
         @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
-            @timeit to "layer $i" yolo.W[i] = yolo.chain[i](yolo.W[i-1])
+            @timeit to "layer $i" store_layer!(yolo.W, i, yolo.chain[i](yolo.W[i-1]))
         end
 
         # PROCESSING EACH YOLO OUTPUT
