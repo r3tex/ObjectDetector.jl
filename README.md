@@ -45,7 +45,7 @@ dimension is an integer multiple of the filter size of the first conv layer (typ
 
 ### CPU allocations management
 
-As of ObjectDetector v0.3.4 on CPU an `AllocArrays` & `Adapt` - based allocator is used to reduce allocations.
+On CPU an `AllocArrays` & `Adapt` - based allocator is used to reduce allocations.
 
 To opt out of the allocator use `disable_bumper=true`.
 i.e.
