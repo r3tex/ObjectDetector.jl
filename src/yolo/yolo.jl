@@ -419,11 +419,11 @@ mutable struct yolo <: AbstractModel
         if uses_gpu || disallow_bumper
             return yolomod
         else
-            allocs = @allocated yolomod(test_batches[1])
-            # FIXME: because the above run is on noise, we don't know how much memory we need for the
-            # final step where allocations increase with detected objects.
-            # Really we should avoid allocs in that step to help set lower than 1.5
-            return wrap_model(yolomod; n_bytes = trunc(Int, allocs * 1.5))
+            # intentionally max out the number of detections here, to generate max memory usage
+            allocs = @allocated ret = yolomod(test_batches[1], detectThresh = 0.0, overlapThresh = 1.0)
+            n_bytes = trunc(Int, allocs * 1.1) # a little buffer
+            @debug "Setting allocator memory limit to $(n_bytes) bytes ($(Base.format_bytes(n_bytes))) based on detecting a max %(size(ret,2)) objects"
+            return wrap_model(yolomod; n_bytes)
         end
     end
 end
