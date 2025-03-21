@@ -24,9 +24,9 @@ pretrained_list = [
 
 @testset "batch sizes" begin
     IMG = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
-    @testset "use_gpu :$use_gpu" for use_gpu in (true, false)
-        @testset "Batch size $batch_size" for batch_size in [1, 3]
-            yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, use_gpu)
+    @testset "disallow_bumper :$disallow_bumper" for disallow_bumper in (true, false)
+        @testset "Batch size $batch_size" for batch_size in (1, 3)
+            yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, disallow_bumper)
             batch = emptybatch(yolomod)
             @test size(batch) == (416, 416, 3, batch_size)
             @test ObjectDetector.getModelInputSize(yolomod) == size(batch)
