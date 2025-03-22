@@ -510,13 +510,6 @@ function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     return cat(weights, x, dims = 3)
 end
 
-function store_layer!(layers, i, new::AllocArray)
-    # with an AllocArray we must overwrite as it is forbidden to write to old memory
-    layers[i] = new
-end
-function store_layer!(layers, i, new)
-    layers[i] .= new
-end
 
 """
     (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
@@ -543,7 +536,7 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             @timeit to "layer $i" begin
                 f = yolo.chain[i]
                 out = f(yolo.W[i-1])
-                store_layer!(yolo.W, i, out)
+                yolo.W[i] .= out
             end
         end
 
