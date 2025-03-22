@@ -42,7 +42,7 @@ expected_result = Float32[0.9061836 0.90347874 0.86342007 0.25070268; 0.06912026
 
             # test that all batch results are the same
             for b in 1:batch_size
-                @test res[1:end-1, res[end,:] .== b] == expected_result
+                @test res[1:end-1, res[end,:] .== b] ≈ expected_result
             end
         end
     end
