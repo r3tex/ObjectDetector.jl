@@ -6,7 +6,7 @@ Create an empty batched input array on the GPU if available.
 function emptybatch(model::T) where {T<:AbstractModel}
     modelInputSize = getModelInputSize(model)
     batch = zeros(Float32, modelInputSize...)
-    if YOLO.uses_gpu(model)
+    if uses_gpu(model)
         gpu(batch)
     else
         batch
@@ -37,10 +37,10 @@ drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results;
 function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
-        modelratio = model.cfg[:width] / model.cfg[:height]
+        modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
         x1i, y1i, x2i, y2i = [1, 2, 3, 4]
     else
-        modelratio = model.cfg[:height] / model.cfg[:width]
+        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
         x1i, y1i, x2i, y2i = [2, 1, 4, 3]
     end
     if modelratio > imgratio
@@ -73,7 +73,7 @@ end
 
 Convenient benchmarking
 """
-function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416))
+function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416), kw...)
     pretrained_list = [
                         YOLO.v2_tiny_416_COCO,
                         YOLO.v2_608_COCO,
@@ -94,7 +94,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         table[i,:] = [modelname false "-" "-" "-" "-" "-"]
 
         t_load = @elapsed begin
-            mod = pretrained(silent=true)
+            mod = pretrained(;silent=true, kw...)
         end
         table[i, 2] = true
         table[i, 3] = round(t_load, digits=3)

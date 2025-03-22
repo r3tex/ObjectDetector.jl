@@ -1,7 +1,7 @@
 module YOLO
 export getModelInputSize
 
-import ..AbstractModel, ..getModelInputSize
+import ..to, ..AbstractModel, ..getModelInputSize, ..wrap_model, ..uses_gpu, ..get_cfg
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 const models_dir = joinpath(@__DIR__, "models")
@@ -9,6 +9,10 @@ const models_dir = joinpath(@__DIR__, "models")
 import Flux
 import Flux: gpu, σ
 using LazyArtifacts
+using TimerOutputs
+using Profile
+using AllocArrays: AllocArray
+using UnsafeArrays: UnsafeArray
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -115,10 +119,11 @@ flip(x) = @view x[end:-1:1, end:-1:1, :, :]
 
 Optimized upsampling without indexing for better GPU performance
 """
-function upsample(a::DenseArray, stride)
+function upsample(a::AbstractArray, stride)
     m1, n1, o1, p1 = size(a)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
-    b = ones(Float32, stride, 1, stride, 1, 1, 1)
+    b = similar(a, stride, 1, stride, 1, 1, 1)
+    b .= 1f0
     return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
 end
 
@@ -177,29 +182,43 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
-uses_gpu(model::T) where {T<:AbstractModel} = model.uses_gpu
-
 function maxpool(x; siz, stride)
     return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
 end
+
+_broadcast(act) = x -> act.(x)
+_upsample(stride) = x -> upsample(x, stride)
+_reorg(stride) = x -> reorg(x, stride)
+_route(val) = x -> val
+_add(val) = x -> x + val
+_cat(val) = x -> cat(x, val, dims = 3)
+_maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
 ########################################################
 mutable struct yolo <: AbstractModel
     cfg::Dict{Symbol, Any}                   # This holds all settings for the model
-    chain::Array{Any, 1}                     # This holds chains of weights and functions
-    W::Dict{Int64, T} where T <: DenseArray  # This holds arrays that the model writes to
+    chain::Flux.Chain                        # This holds chains of weights and functions
+    W::Dict{Int64, AbstractArray}            # This holds arrays that the model writes to
     out::Array{Dict{Symbol, Any}, 1}         # This holds values and arrays needed for inference
     uses_gpu::Bool                           # Whether the gpu was requested to be used
 
+    # for ConstructionBase
+    yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
+
     # The constructor takes the official YOLO config files and weight files
-    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true) = begin
+    yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
         # make our own shorthand `gpu` function that can be switched on or off
-        gpu(x) = use_gpu ? Flux.gpu(x) : x
+        if use_gpu && !(gpu([0f0]) isa Vector{Float32})
+            uses_gpu = true
+        else
+            uses_gpu = false
+        end
+        maybe_gpu(x) = uses_gpu ? gpu(x) : x
 
         # read the config file and return [:layername => Dict(:setting => value), ...]
         # the first 'layer' is not a real layer, and has overarching YOLO settings
@@ -244,27 +263,27 @@ mutable struct yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
-                push!(stack, gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                bn && push!(stack, gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
-                push!(stack, let; _act(x) = act.(x) end)
+                push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
+                bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
+                push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
                 !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
             elseif blocktype == :upsample
                 stride = block[:stride]
-                push!(fn, let; _upsample(x) = upsample(x, stride) end) # upsample using Kronecker tensor product
+                push!(fn, _upsample(stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :reorg
                 stride = block[:stride]
-                push!(fn, let; _reorg(x) = reorg(x, stride) end) # reorg (reshape to (w/stride, h/stride, c*stride^2))
+                push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                push!(fn, let; _maxpool(x) = maxpool(x; siz, stride) end)
+                push!(fn, _maxpool(siz, stride))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
@@ -305,13 +324,13 @@ mutable struct yolo <: AbstractModel
 
         # PART 2 - THE SKIPS
         ####################
-        # Create test image. Note that darknet is row-major, so width-first
-        testimgs = [gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
+        # Create test batch. Note that darknet is row-major, so width-first
+        test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
         needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
-        W = Dict{Int64, typeof(testimgs[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
+        W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in 2:length(needout)
@@ -327,22 +346,21 @@ mutable struct yolo <: AbstractModel
                     arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
                     if skip_type == :route
-                        fn[j] = let; _route(x) = identity(W[arrayidx]) end
+                        fn[j] = _route(identity(W[arrayidx]))
                     elseif skip_type == :add
-                        fn[j] = let; _add(x) = x + W[arrayidx] end
+                        fn[j] =  _add(W[arrayidx])
                     elseif skip_type == :cat
-                        fn[j] = let; _cat(x) = cat(x, W[arrayidx], dims = 3) end
+                        fn[j] = _cat(W[arrayidx])
                     else
                         error("Unknown skip layer $skip_type")
                     end
                 end
             end
             push!(chainstack, Flux.Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(testimgs, chainstack[end](testimgs[end])) # run the previous test image
-            push!(W, i-1 => copy(testimgs[end])) # generate a temporary array for the output of the chain
+            push!(test_batches, chainstack[end](test_batches[end])) # run the previous test image
+            push!(W, i-1 => copy(test_batches[end])) # generate a temporary array for the output of the chain
             push!(layer2out, [l => i-1 for l in fst:lst]...)
         end
-        testimgs = nothing
         !silent && print("\n\n")
         matrix_sizes_x = [size(v, 1) for (k,v) in W]
         matrix_sizes_y = [size(v, 2) for (k,v) in W]
@@ -367,14 +385,15 @@ mutable struct yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            offset = maybe_gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
             @views for i in 0:w-1, j in 0:h-1
                 offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
                 offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            scale = maybe_gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            scale .= 1.0f0
 
             @views for i in 0:w-1, j in 0:h-1
                 scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
@@ -382,7 +401,9 @@ mutable struct yolo <: AbstractModel
             end
 
             # precalculate the anchor shapes to scale up the detection boxes
-            anchor = gpu(reshape(ones(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
+            x = similar(out, Float32, w*h*2*length(anchormask)*b)
+            x .= 1.0f0
+            anchor = maybe_gpu(reshape(x, w, h, 2, length(anchormask), b))
 
             for i in 1:length(anchormask)
                 anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
@@ -397,16 +418,27 @@ mutable struct yolo <: AbstractModel
             out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
         end
 
-        return new(cfg, chainstack, W, out, use_gpu)
+        yolomod = new(cfg, Flux.Chain(chainstack), W, out, uses_gpu)
+        if uses_gpu || disallow_bumper
+            return yolomod
+        else
+            return wrap_model(yolomod)
+        end
     end
 end
+
+uses_gpu(y::yolo) = y.uses_gpu
+get_cfg(y::yolo) = y.cfg
+
+# make yolo `Adapt`-able
+Flux.@layer :ignore yolo
 
 """
     getModelInputSize(model::yolo)
 
 Returns model size tuple in (width, height, channels, batchsize) order (row-major)
 """
-getModelInputSize(model::yolo) = (model.cfg[:width], model.cfg[:height], model.cfg[:channels], model.cfg[:batchsize])
+getModelInputSize(model::yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
 
 function Base.show(io::IO, yolo::yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
@@ -421,11 +453,11 @@ end
 ##### FUNCTIONS FOR INFERENCE ##########################
 ########################################################
 """
-    clipdetect!(input::Array, conf)
+    clipdetect!(input::AbstractArray, conf)
 
 Sets all values under a given threshold to zero
 """
-function clipdetect!(input::Array, conf)
+function clipdetect!(input::AbstractArray, conf)
    rows, cols = size(input)
    for i in 1:cols
        input[5, i] = ifelse(input[5, i] > conf, input[5, i], Float32(0))
@@ -437,19 +469,19 @@ end
 
 Findmax, get the class with highest confidence and class number out.
 """
-function findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
+function findmax!(input::AbstractArray{T}, idst::Int, idend::Int) where {T}
     for i in 1:size(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(input[idst:idend, i])
+        input[end-2, i], input[end-1, i] = findmax(@view input[idst:idend, i])
     end
 end
 
 
 """
-    keepdetections(arr::Array)
+    keepdetections(arr::AbstractArray)
 
 Reduces the size of array and only keeps detections over threshold
 """
-function keepdetections(arr::Array)
+function keepdetections(arr::AbstractArray)
     return arr[:, arr[5, :] .> 0]
 end
 
@@ -473,85 +505,120 @@ function bboxiou(box1, box2)
     return iou
 end
 
-function extend_for_attributes(weights::DenseArray, w, h, bo, ba)
-    return cat(weights, zeros(Float32, w, h, 4, bo, ba), dims = 3)
+function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
+    x = similar(weights, Float32, w, h, 4, bo, ba)
+    x .= 0f0
+    return cat(weights, x, dims = 3)
 end
 
+check_w_type(arr::AllocArray) = check_w_type(arr.arr)
+check_w_type(::UnsafeArray) = throw(ArgumentError("Internal error: UnsafeArray has leaked into internal buffer"))
+check_w_type(::Any) = nothing
+
 """
-    (yolo::yolo)(img::DenseArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
+    (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
 
 Simply pass a batch of images to the yolo object to do inference.
 
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::yolo)(img::DenseArray; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
-    @assert ndims(img) == 4 # width, height, channels, batchsize
-    yolo.W[0] = img
-
-    # FORWARD PASS
-    ##############
-    for i in eachindex(yolo.chain) # each chain writes to a predefined output
-        yolo.W[i] .= yolo.chain[i](yolo.W[i-1])
+function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
+    if show_timing
+        enable_timer!(to)
+        reset_timer!(to)
+    else
+        disable_timer!(to)
     end
+    @timeit to "yolo" begin
+        @assert ndims(img) == 4 # width, height, channels, batchsize
+        yolo.W[0] = img
 
-    # PROCESSING EACH YOLO OUTPUT
-    #############################
-    outweights = []
-    outnr = 0
-    @views for out in yolo.out
-        outnr += 1
-        w, h, a, bo, ba = out[:size]
-        weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
-        # adjust the predicted box coordinates into pixel values
-        weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
-        weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
-        weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
-
-        cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
-
-        # Convert to image width & height scale (0.0-1.0)
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
-        if yolo.cfg[:yoloversion] == 2
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
-        else
-            weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
-            weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+        # FORWARD PASS
+        ##############
+        @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
+            @timeit to "layer $i" begin
+                f = yolo.chain[i]
+                out = f(yolo.W[i-1])
+                check_w_type(yolo.W[i])
+                yolo.W[i] .= out
+            end
         end
 
-        weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-        weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-        weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-        weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+        # PROCESSING EACH YOLO OUTPUT
+        #############################
+        @timeit to "post-processing" begin
+            outweights = Any[]
+            outnr = 0
+            @timeit to "processing outputs" @views for out in yolo.out
+                outnr += 1
+                w, h, a, bo, ba = out[:size]
+                weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
+                # adjust the predicted box coordinates into pixel values
+                weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
+                weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
-        # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
-        weights = extend_for_attributes(weights, w, h, bo, ba)
+                cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
 
-        weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
-        for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-        weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
-        weights = reshape(weights, a+4, :) # reshape to attr, data
+                # Convert to image width & height scale (0.0-1.0)
+                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
+                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+                if yolo.cfg[:yoloversion] == 2
+                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
+                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+                else
+                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+                end
 
-        thresh = detectThresh == nothing ? Float32(out[:truth]) : Float32(detectThresh)
-        clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
-        findmax!(weights, 6, a)
-        push!(outweights, weights)
+                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
+                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
+                weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+                weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+
+                # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
+                weights = extend_for_attributes(weights, w, h, bo, ba)
+
+                weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
+                for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
+                weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
+                weights = reshape(weights, a+4, :) # reshape to attr, data
+
+                thresh = detectThresh === nothing ? Float32(out[:truth]) : Float32(detectThresh)
+                clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
+                findmax!(weights, 6, a)
+                push!(outweights, weights)
+            end
+
+            # PROCESSING ALL PREDICTIONS
+            ############################
+            @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
+
+            if size(batchout, 2) < 2
+                if show_timing
+                    show(to, sortby=:firstexec)
+                    println()
+                end
+                ret = batchout # empty or singular output doesn't need further filtering
+            else
+                batchsize = yolo.cfg[:batchsize]
+                @timeit to "nms" if profile
+                    Profile.Allocs.clear()
+                    Profile.Allocs.@profile sample_rate=1.0 output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    Profile.Allocs.print()
+                else
+                    output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                end
+                ret = hcat(output...)
+            end
+        end
     end
-
-    # PROCESSING ALL PREDICTIONS
-    ############################
-
-    batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))::Matrix{Float32}
-
-    size(batchout, 2) < 2 && return batchout # empty or singular output doesn't need further filtering
-
-    batchsize = yolo.cfg[:batchsize]
-
-    output = perform_detection_nms(batchout, overlapThresh, batchsize)
-
-    return hcat(output...)::Matrix{Float32}
+    if show_timing
+        show(to, sortby=:firstexec)
+        println()
+    end
+    return ret
 end
 
 """
@@ -564,7 +631,7 @@ the overlap threshold above which boxes are considered duplicates.
 
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
-function nms(dets::Matrix{Float32}, iou_thresh)
+function nms(dets::AbstractArray, iou_thresh)
     # The bounding box coords are in dets[1:4, :].
     # The columns are sorted by score already (descending).
     idxs = collect(1:size(dets, 2))        # candidate column indexes
@@ -606,21 +673,26 @@ end
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
 group them by class, sort each group by the 5th column (score) descending, and
-run NMS to remove duplicates.
+run NMS to remove duplicates using bboxiou and overlapThresh.
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
+
+The input `batchout` is a 2D array of shape (num_fields, N), where `N` is the
+total number of detections across all batches.
+
+batchout rows:
+- 1-4: the bounding box coordinates x1, y1, x2, y2
+- 5: the confidence/score.
+- scores for each class
+- second-to-last row (end-1) has the class index.
+- The last row is the batch index
 """
 function perform_detection_nms(
-    batchout::Matrix{Float32},
+    batchout,
     overlapThresh,
     batchsize::Int
 )
-    #  - batchout’s last row (end) has the batch index
-    #  - batchout’s second-to-last row (end-1) has the class index
-    #  - detection boxes: det[1:4, i] is the bounding box
-    #  - det[5, i] is the confidence/score
-
-    output = Matrix{Float32}[]  # array of matrices
+    output = []  # array of matrices
 
     @views for b in 1:batchsize
         # Get columns that belong to batch b

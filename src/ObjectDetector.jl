@@ -12,11 +12,20 @@ using BenchmarkTools
 using PrettyTables
 using ImageDraw
 using PrecompileTools
+using TimerOutputs
+using AllocArrays
+using Adapt
+
+const to = TimerOutput()
 
 abstract type AbstractModel end
 function getModelInputSize end
 
 include("prepareimage.jl")
+include("allocators.jl")
+
+function uses_gpu end
+function get_cfg end
 
 ## YOLO models
 include(joinpath(@__DIR__,"yolo","yolo.jl"))

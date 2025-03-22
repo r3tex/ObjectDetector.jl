@@ -5,7 +5,7 @@ Uses CUDA, if available.
 
 ## Installation
 
-Requires julia v1.3+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
+Requires julia v1.10+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
 
 ```
 pkg> add ObjectDetector
@@ -43,6 +43,15 @@ Also, non-square models can be loaded, but care should be taken to ensure that e
 dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32).
 
 
+### CPU allocations management
+
+On CPU an `AllocArrays` & `Adapt` - based allocator is used to reduce allocations.
+
+To opt out of the allocator use `disable_bumper=true`.
+i.e.
+```julia
+yolomod = YOLO.v3_608_COCO(batch=1, disable_bumper=true)
+```
 
 ### Visualizing the result
 ```julia
