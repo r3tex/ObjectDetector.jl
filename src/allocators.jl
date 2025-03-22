@@ -37,7 +37,7 @@ const DEFAULT_SLAB_SIZE = 2^29 # 512 MB, see https://github.com/r3tex/ObjectDete
 
 Wraps a model to use a Bumper.jl allocator for temporary arrays. The type `T` can be set to `CheckedAllocArray` for testing purposes.
 """
-function wrap_model(model; T=AllocArray, allocator=BumperAllocator(SlabBuffer{$DEFAULT_SLAB_SIZE}()))
+function wrap_model(model; T=AllocArray, allocator=BumperAllocator(SlabBuffer{DEFAULT_SLAB_SIZE}()))
     model_aa = Adapt.adapt(T, model)
     return AllocWrappedModel(model, allocator, T, model_aa)
 end
