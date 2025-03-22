@@ -12,6 +12,7 @@ using LazyArtifacts
 using TimerOutputs
 using Profile
 using AllocArrays: AllocArray
+using UnsafeArrays: UnsafeArray
 
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
@@ -510,6 +511,9 @@ function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     return cat(weights, x, dims = 3)
 end
 
+check_w_type(arr::AllocArray) = check_w_type(arr.arr)
+check_w_type(::UnsafeArray) = throw(ArgumentError("Internal error: UnsafeArray has leaked into internal buffer"))
+check_w_type(::Any) = nothing
 
 """
     (yolo::yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
@@ -536,6 +540,7 @@ function (yolo::yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             @timeit to "layer $i" begin
                 f = yolo.chain[i]
                 out = f(yolo.W[i-1])
+                check_w_type(yolo.W[i])
                 yolo.W[i] .= out
             end
         end
