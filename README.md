@@ -28,7 +28,7 @@ batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU 
 
 img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","dog-cycle-car.png"))
 
-batch[:,:,:,1], padding = prepareImage(img, yolomod) # Send resized image to the batch
+batch[:,:,:,1], padding = prepare_image(img, yolomod) # Send resized image to the batch
 
 res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the length-1 batch
 ```
@@ -37,7 +37,7 @@ Note that while the convention in Julia is column-major, where images are loaded
 such that a _widescreen_ image matrix would have a smaller 1st dimension than 2nd.
 Darknet is row-major, so the image matrix needs to have its first and second dims
 permuted before being passed to batch. Otherwise features may not be detected due to
-being rotated 90º. The function `prepareImage()` includes this conversion automatically.
+being rotated 90º. The function `prepare_image()` includes this conversion automatically.
 
 Also, non-square models can be loaded, but care should be taken to ensure that each
 dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32).
@@ -55,7 +55,7 @@ yolomod = YOLO.v3_608_COCO(batch=1, disable_bumper=true)
 
 ### Visualizing the result
 ```julia
-imgBoxes = drawBoxes(img, yolomod, padding, res)
+imgBoxes = draw_boxes(img, yolomod, padding, res)
 save("result.png", imgBoxes)
 ```
 ![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.png)
@@ -98,14 +98,14 @@ YOLO.v3_tiny_416_COCO()
 
 Or custom models can be loaded with:
 ```julia
-YOLO.yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch size.
+YOLO.Yolo("path/to/model.cfg", "path/to/weights.weights", 1) # `1` is the batch size.
 ```
 
 For instance the pretrained models are defined as:
 ```julia
 function v3_COCO(;batch=1, silent=false, cfgchanges=nothing, w=416, h=416)
     cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)]
-    yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
+    Yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
 end
 ```
 

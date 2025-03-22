@@ -30,10 +30,10 @@ expected_result = Float32[0.9061836 0.90347874 0.86342007 0.25070268; 0.06912026
             yolomod = YOLO.v3_tiny_416_COCO(;batch = batch_size, silent=true, disallow_bumper)
             batch = emptybatch(yolomod)
             @test size(batch) == (416, 416, 3, batch_size)
-            @test ObjectDetector.getModelInputSize(yolomod) == size(batch)
+            @test ObjectDetector.get_input_size(yolomod) == size(batch)
             @test typeof(batch) in (Array{Float32, 4}, CuArray{Float32, 4, CUDA.DeviceMemory})
             for b in 1:batch_size
-                batch[:, :, :, b], padding = prepareImage(IMG, yolomod)
+                batch[:, :, :, b], padding = prepare_image(IMG, yolomod)
             end
             res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
             expected_objects = 4
@@ -53,7 +53,7 @@ end
         IMG = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
         batch = emptybatch(yolomod)
-        batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+        batch[:,:,:,1], padding = prepare_image(IMG, yolomod)
         res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
         @test size(res,2) > 0
     end
@@ -89,7 +89,7 @@ for (k, pretrained) in pairs(pretrained_list)
             IMG = load(joinpath(@__DIR__,"images","$imagename.png"))
             resultsdir = joinpath(@__DIR__,"results",imagename)
             mkpath(resultsdir)
-            batch[:,:,:,1], padding = prepareImage(IMG, yolomod)
+            batch[:,:,:,1], padding = prepare_image(IMG, yolomod)
 
             val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
             @test size(res,2) > 0
@@ -99,7 +99,7 @@ for (k, pretrained) in pairs(pretrained_list)
             @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
 
             resfile = joinpath(resultsdir,"$(modelname).png")
-            @test_reference resfile drawBoxes(IMG, yolomod, padding, res)
+            @test_reference resfile draw_boxes(IMG, yolomod, padding, res)
             @info "$modelname: View result: $resfile"
 
         end

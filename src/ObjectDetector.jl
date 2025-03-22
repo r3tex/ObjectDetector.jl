@@ -1,6 +1,6 @@
 module ObjectDetector
 export YOLO
-export prepareImage, prepareImage!, resizekern, sizethatfits, emptybatch, drawBoxes
+export prepare_image, prepare_image!, resizekern, sizethatfits, emptybatch, draw_boxes
 
 import Flux.gpu
 
@@ -19,7 +19,7 @@ using Adapt
 const to = TimerOutput()
 
 abstract type AbstractModel end
-function getModelInputSize end
+function get_input_size end
 
 include("prepareimage.jl")
 include("allocators.jl")

@@ -4,7 +4,7 @@
 Create an empty batched input array on the GPU if available.
 """
 function emptybatch(model::T) where {T<:AbstractModel}
-    modelInputSize = getModelInputSize(model)
+    modelInputSize = get_input_size(model)
     batch = zeros(Float32, modelInputSize...)
     if uses_gpu(model)
         gpu(batch)
@@ -28,13 +28,13 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
 """
-    drawBoxes(img::Array, model::YOLO.yolo, padding::Array, results)
-    drawBoxes!(img::Array, model::YOLO.yolo, padding::Array, results)
+    draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
+    draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
 
 Draw boxes on image for each BBOX result.
 """
-drawBoxes(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true) = drawBoxes!(copy(img), model, padding, results, transpose=transpose)
-function drawBoxes!(img::AbstractArray, model::YOLO.yolo, padding::AbstractArray, results; transpose=true)
+draw_boxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true) = draw_boxes!(copy(img), model, padding, results, transpose=transpose)
+function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true)
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
@@ -100,7 +100,7 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         table[i, 3] = round(t_load, digits=3)
 
         batch = emptybatch(mod)
-        batch[:,:,:,1], padding = prepareImage(img, mod)
+        batch[:,:,:,1], padding = prepare_image(img, mod)
 
         res = mod(batch) #run once
         t_run = @belapsed $mod($batch);
