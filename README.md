@@ -20,7 +20,7 @@ add `CUDA` and `cuDNN` to your project and load both packages.
 
 ### Loading and running on an image
 ```julia
-using ObjectDetector, FileIO
+using ObjectDetector, FileIO, ImageIO
 
 yolomod = YOLO.v3_608_COCO(batch=1, silent=true) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
 
