@@ -208,7 +208,7 @@ mutable struct Yolo <: AbstractModel
     Yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
-    Yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false, allocator=BumperAllocator()) = begin
+    Yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false, allocator=nothing) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
@@ -422,7 +422,8 @@ mutable struct Yolo <: AbstractModel
         if uses_gpu || disallow_bumper
             return yolomod
         else
-            return wrap_model(yolomod; allocator)
+            kw = allocator === nothing ? NamedTuple() : (; allocator=allocator)
+            return wrap_model(yolomod; kw...)
         end
     end
 end
