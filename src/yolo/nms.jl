@@ -40,38 +40,37 @@ the overlap threshold above which boxes are considered duplicates.
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
 function nms(dets::AbstractArray, iou_thresh)
-    # The bounding box coords are in dets[1:4, :].
-    # The columns are sorted by score already (descending).
-    idxs = collect(1:size(dets, 2))        # candidate column indexes
-    keep = Int[]                            # final picks
+    N = size(dets, 2)
+    idxs = similar(dets, Int, N)
+    @inbounds for j in 1:N
+        idxs[j] = j
+    end
 
-    while !isempty(idxs)
-        # Pick the top-scoring box (first in the sorted list)
-        i = first(idxs)
+    keep = Vector{Int}()
+    ious = similar(dets, N) # large enough to reuse
+
+    idx_len = N
+    while idx_len > 0
+        i = idxs[1]
         push!(keep, i)
 
-        # If there's only one left, no need to compute IoU
-        if length(idxs) == 1
+        if idx_len == 1
             break
         end
 
-        # Compute IoU of the chosen box with the rest
-        # - bboxiou should accept two bounding boxes or a box vs many boxes
-        #   so it returns a vector of IoUs in this usage.
-        iou = similar(dets, length(idxs) - 1)
-        bboxiou!(iou, dets[1:4, i], dets[1:4, idxs[2:end]])
+        # Compute IoUs between i and rest
+        b2_len = idx_len - 1
+        bboxiou!(ious[1:b2_len], view(dets, 1:4, i), view(dets, 1:4, idxs[2:idx_len]))
 
-        # Find which have IoU >= threshold
-        to_remove = findall(≥(iou_thresh), iou)
-
-        # Those indexes in `to_remove` are offset by +1 in the `idxs` array
-        remove_idxs = idxs[to_remove .+ 1]
-
-        # Remove them all from `idxs`
-        filter!(x -> x ∉ remove_idxs, idxs)
-
-        # Also remove the “picked” box (we already kept i)
-        filter!(x -> x != i, idxs)
+        # Compress idxs in-place: keep only boxes with IoU < threshold
+        write_idx = 1  # we'll overwrite idxs[2:end] starting at idxs[1]
+        for j in 1:b2_len
+            if ious[j] < iou_thresh
+                write_idx += 1
+                idxs[write_idx] = idxs[j + 1]
+            end
+        end
+        idx_len = write_idx - 1
     end
 
     return keep
@@ -96,41 +95,47 @@ batchout rows:
 - second-to-last row (end-1) has the class index.
 - The last row is the batch index
 """
-function perform_detection_nms(
-    batchout,
-    overlapThresh,
-    batchsize::Int
-)
-    output = []  # array of matrices
+function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
+    output = similar(batchout)
+    i = 1  # index for writing into `output`
 
-    @views for b in 1:batchsize
-        # Get columns that belong to batch b
-        b_idxs = findall(x -> x == b, batchout[end, :])
-        if isempty(b_idxs)
+    for b in 1:batchsize
+        b_cols = findall(==(b), @view(batchout[end, :]))
+        if isempty(b_cols)
             continue
         end
-        page = batchout[:, b_idxs]
 
-        # For each class present in this batch
-        present_classes = unique(page[end-1, :])
-        for c in present_classes
-            # Gather all detections that match class c
-            c_idxs = findall(x -> x == c, page[end-1, :])
+        page = @view batchout[:, b_cols]
+        class_ids = @view page[end-1, :]
+
+        seen_classes = Set{eltype(class_ids)}()
+
+        @inbounds for (local_col_idx, cls) in enumerate(class_ids)
+            if cls in seen_classes
+                continue
+            end
+            push!(seen_classes, cls)
+
+            c_idxs = findall(==(cls), class_ids)
             if isempty(c_idxs)
                 continue
             end
 
-            # Extract and sort by confidence (the 5th row),
-            # descending:
-            dets = sortslices(page[:, c_idxs], dims=2, by = x -> x[5], rev = true)
+            dets = @view page[:, c_idxs]
 
-            # Run NMS to get the indexes of the columns to keep
-            keep = nms(dets, overlapThresh)
+            scores = @view dets[5, :]
+            sorted_idx = sortperm(scores, rev=true)
+            sorted_dets = dets[:, sorted_idx]  # copy, not @view!
 
-            # Save the filtered detections
-            push!(output, dets[:, keep])
+            keep = nms(sorted_dets, overlapThresh)
+
+            # @info "Batch $b, class $cls: input=$(size(sorted_dets, 2)), kept=$(length(keep))"
+
+            @inbounds for k in keep
+                output[:, i] = sorted_dets[:, k]
+                i += 1
+            end
         end
     end
-
-    return output
+    return output[:, 1:i-1]
 end

@@ -485,7 +485,7 @@ end
 Reduces the size of array and only keeps detections over threshold
 """
 function keepdetections(arr::AbstractArray)
-    return arr[:, arr[5, :] .> 0]
+    return @views arr[:, arr[5, :] .> 0]
 end
 
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
@@ -579,21 +579,16 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
 
             if size(batchout, 2) < 2
-                if show_timing
-                    show(to, sortby=:firstexec)
-                    println()
-                end
                 ret = batchout # empty or singular output doesn't need further filtering
             else
                 batchsize = yolo.cfg[:batchsize]
                 @timeit to "nms" if profile
                     Profile.Allocs.clear()
-                    Profile.Allocs.@profile sample_rate=1.0 output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    Profile.Allocs.@profile sample_rate=1.0 ret = perform_detection_nms(batchout, overlapThresh, batchsize)
                     Profile.Allocs.print()
                 else
-                    output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    ret = perform_detection_nms(batchout, overlapThresh, batchsize)
                 end
-                ret = hcat(output...)
             end
         end
     end
