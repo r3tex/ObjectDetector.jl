@@ -1,21 +1,32 @@
 """
-    bboxiou(box1, box2)
+    bboxiou!(out, box1, box2)
 
-Bounding Box Intersection Over Union - removes overlapping boxes for same object
+Compute the Intersection over Union (IoU) between a single bounding box `box1`
+and multiple boxes `box2`, writing results into `out`.
+
+- `box1`: A 4-element vector `[x1, y1, x2, y2]`
+- `box2`: A 4×N matrix, where each column is a bounding box.
+- `out`: A preallocated vector of length N to hold IoU results.
+
+This version avoids allocations by reusing `out`.
 """
-function bboxiou(box1, box2)
+function bboxiou!(out, box1, box2)
     b1x1, b1y1, b1x2, b1y2 = box1
     b2x1, b2y1, b2x2, b2y2 = view(box2, 1, :), view(box2, 2, :), view(box2, 3, :), view(box2, 4, :)
-    rectx1 = max.(b1x1, b2x1)
-    recty1 = max.(b1y1, b2y1)
-    rectx2 = min.(b1x2, b2x2)
-    recty2 = min.(b1y2, b2y2)
-    z = zeros(length(rectx2))
-    interarea = max.(rectx2 .- rectx1, z) .* max.(recty2 .- recty1, z)
+
     b1area = (b1x2 - b1x1) * (b1y2 - b1y1)
-    b2area = (b2x2 .- b2x1) .* (b2y2 .- b2y1)
-    iou = interarea ./ (b1area .+ b2area .- interarea)
-    return iou
+
+    @inbounds for i in eachindex(out)
+        rectx1 = max(b1x1, b2x1[i])
+        recty1 = max(b1y1, b2y1[i])
+        rectx2 = min(b1x2, b2x2[i])
+        recty2 = min(b1y2, b2y2[i])
+        w = max(0f0, rectx2 - rectx1)
+        h = max(0f0, recty2 - recty1)
+        inter = w * h
+        b2area = (b2x2[i] - b2x1[i]) * (b2y2[i] - b2y1[i])
+        out[i] = inter / (b1area + b2area - inter)
+    end
 end
 
 """
@@ -47,7 +58,8 @@ function nms(dets::AbstractArray, iou_thresh)
         # Compute IoU of the chosen box with the rest
         # - bboxiou should accept two bounding boxes or a box vs many boxes
         #   so it returns a vector of IoUs in this usage.
-        iou = bboxiou(dets[1:4, i], dets[1:4, idxs[2:end]])
+        iou = similar(dets, length(idxs) - 1)
+        bboxiou!(iou, dets[1:4, i], dets[1:4, idxs[2:end]])
 
         # Find which have IoU >= threshold
         to_remove = findall(≥(iou_thresh), iou)
