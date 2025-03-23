@@ -22,10 +22,11 @@ function (wm::AllocWrappedModel)(args...; kw...)
             alloc = allocated_bytes(wm.allocator)
             reset!(wm.allocator)
             if alloc !== nothing && alloc > wm.allocator_size
-                healthy_alloc = trunc(Int, alloc * 1.1)
-                @debug "Resizing allocator to: allocated ($(Base.format_bytes(alloc))) x 1.1 = $(Base.format_bytes(healthy_alloc))"
-                wm.allocator = BumperAllocator(SlabBuffer{healthy_alloc}())
-                wm.allocator_size = healthy_alloc
+                headroom = 1.25 # allow for 25% increase, say because of more objects detected
+                slab_size = trunc(Int, alloc * headroom)
+                @debug "Resizing allocator slab size to: allocated ($(Base.format_bytes(alloc))) x $headroom = $(Base.format_bytes(slab_size))"
+                wm.allocator = BumperAllocator(SlabBuffer{slab_size}())
+                wm.allocator_size = slab_size
             end
         end
     end
@@ -55,5 +56,5 @@ Wraps a model to use a Bumper.jl allocator for temporary arrays. The type `T` ca
 """
 function wrap_model(model; T=AllocArray, allocator=BumperAllocator(SlabBuffer{DEFAULT_SLAB_SIZE}()))
     model_aa = Adapt.adapt(T, model)
-    return AllocWrappedModel(model, allocator, 0, T, model_aa)
+    return AllocWrappedModel(model, allocator, DEFAULT_SLAB_SIZE, T, model_aa)
 end
