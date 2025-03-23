@@ -14,6 +14,8 @@ using Profile
 using AllocArrays: AllocArray
 using UnsafeArrays: UnsafeArray
 
+include("nms.jl")
+
 #########################################################
 ##### FUNCTIONS FOR PARSING CONFIG AND WEIGHT FILES #####
 #########################################################
@@ -485,26 +487,6 @@ function keepdetections(arr::AbstractArray)
     return arr[:, arr[5, :] .> 0]
 end
 
-"""
-    bboxiou(box1, box2)
-
-Bounding Box Intersection Over Union - removes overlapping boxes for same object
-"""
-function bboxiou(box1, box2)
-    b1x1, b1y1, b1x2, b1y2 = box1
-    b2x1, b2y1, b2x2, b2y2 = view(box2, 1, :), view(box2, 2, :), view(box2, 3, :), view(box2, 4, :)
-    rectx1 = max.(b1x1, b2x1)
-    recty1 = max.(b1y1, b2y1)
-    rectx2 = min.(b1x2, b2x2)
-    recty2 = min.(b1y2, b2y2)
-    z = zeros(length(rectx2))
-    interarea = max.(rectx2 .- rectx1, z) .* max.(recty2 .- recty1, z)
-    b1area = (b1x2 - b1x1) * (b1y2 - b1y1)
-    b2area = (b2x2 .- b2x1) .* (b2y2 .- b2y1)
-    iou = interarea ./ (b1area .+ b2area .- interarea)
-    return iou
-end
-
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     x = similar(weights, Float32, w, h, 4, bo, ba)
     x .= 0f0
@@ -619,111 +601,6 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
         println()
     end
     return ret
-end
-
-"""
-    nms(dets, iou_thresh)
-
-Perform a simple Non-Maximum Suppression (NMS) on the detections `dets`.
-`dets` is a 2D array of shape (≥5, N), assumed to be sorted in descending
-order by the 5th column (i.e., confidence or score). `iou_thresh` is
-the overlap threshold above which boxes are considered duplicates.
-
-Returns an array of indexes `keep` of the columns in `dets` you want to keep.
-"""
-function nms(dets::AbstractArray, iou_thresh)
-    # The bounding box coords are in dets[1:4, :].
-    # The columns are sorted by score already (descending).
-    idxs = collect(1:size(dets, 2))        # candidate column indexes
-    keep = Int[]                            # final picks
-
-    while !isempty(idxs)
-        # Pick the top-scoring box (first in the sorted list)
-        i = first(idxs)
-        push!(keep, i)
-
-        # If there's only one left, no need to compute IoU
-        if length(idxs) == 1
-            break
-        end
-
-        # Compute IoU of the chosen box with the rest
-        # - bboxiou should accept two bounding boxes or a box vs many boxes
-        #   so it returns a vector of IoUs in this usage.
-        iou = bboxiou(dets[1:4, i], dets[1:4, idxs[2:end]])
-
-        # Find which have IoU >= threshold
-        to_remove = findall(≥(iou_thresh), iou)
-
-        # Those indexes in `to_remove` are offset by +1 in the `idxs` array
-        remove_idxs = idxs[to_remove .+ 1]
-
-        # Remove them all from `idxs`
-        filter!(x -> x ∉ remove_idxs, idxs)
-
-        # Also remove the “picked” box (we already kept i)
-        filter!(x -> x != i, idxs)
-    end
-
-    return keep
-end
-
-"""
-    perform_detection_nms(batchout, overlapThresh, batchsize)
-
-For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
-group them by class, sort each group by the 5th column (score) descending, and
-run NMS to remove duplicates using bboxiou and overlapThresh.
-
-Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
-
-The input `batchout` is a 2D array of shape (num_fields, N), where `N` is the
-total number of detections across all batches.
-
-batchout rows:
-- 1-4: the bounding box coordinates x1, y1, x2, y2
-- 5: the confidence/score.
-- scores for each class
-- second-to-last row (end-1) has the class index.
-- The last row is the batch index
-"""
-function perform_detection_nms(
-    batchout,
-    overlapThresh,
-    batchsize::Int
-)
-    output = []  # array of matrices
-
-    @views for b in 1:batchsize
-        # Get columns that belong to batch b
-        b_idxs = findall(x -> x == b, batchout[end, :])
-        if isempty(b_idxs)
-            continue
-        end
-        page = batchout[:, b_idxs]
-
-        # For each class present in this batch
-        present_classes = unique(page[end-1, :])
-        for c in present_classes
-            # Gather all detections that match class c
-            c_idxs = findall(x -> x == c, page[end-1, :])
-            if isempty(c_idxs)
-                continue
-            end
-
-            # Extract and sort by confidence (the 5th row),
-            # descending:
-            dets = sortslices(page[:, c_idxs], dims=2, by = x -> x[5], rev = true)
-
-            # Run NMS to get the indexes of the columns to keep
-            keep = nms(dets, overlapThresh)
-
-            # Save the filtered detections
-            push!(output, dets[:, keep])
-        end
-    end
-
-    return output
 end
 
 include(joinpath(@__DIR__,"pretrained.jl"))
