@@ -30,14 +30,13 @@ draw_boxes(img, wm::AllocWrappedModel, padding, results; kw...) = draw_boxes(img
 draw_boxes!(img::AbstractArray, wm::AllocWrappedModel, padding::AbstractArray, results; kw...) = draw_boxes!(img, wm.model, padding, results; kw...)
 get_input_size(wm::AllocWrappedModel) = get_input_size(wm.model)
 
-const DEFAULT_SLAB_SIZE = 2^29 # 512 MB, see https://github.com/r3tex/ObjectDetector.jl/pull/109
 
 """
-    wrap_model(model; T=AllocArray, allocator=BumperAllocator(SlabBuffer{$DEFAULT_SLAB_SIZE}()))
+    wrap_model(model; T=AllocArray, allocator=BumperAllocator())
 
 Wraps a model to use a Bumper.jl allocator for temporary arrays. The type `T` can be set to `CheckedAllocArray` for testing purposes.
 """
-function wrap_model(model; T=AllocArray, allocator=BumperAllocator(SlabBuffer{DEFAULT_SLAB_SIZE}()))
+function wrap_model(model; T=AllocArray, allocator=BumperAllocator())
     model_aa = Adapt.adapt(T, model)
     return AllocWrappedModel(model, allocator, T, model_aa)
 end

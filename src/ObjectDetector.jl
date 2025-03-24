@@ -14,7 +14,6 @@ using ImageDraw
 using PrecompileTools
 using TimerOutputs
 using AllocArrays
-using Bumper: SlabBuffer
 using Adapt
 
 const to = TimerOutput()
