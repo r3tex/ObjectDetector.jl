@@ -41,13 +41,15 @@ Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
 function nms(dets::AbstractArray, iou_thresh)
     N = size(dets, 2)
-    idxs = similar(dets, Int, N)
+    # NB. idxs cannot be AllocArrays as it changes the vectorization within bboxiou!, afecting results
+    idxs = Vector{Int}(undef, N)
     @inbounds for j in 1:N
         idxs[j] = j
     end
 
     keep = Vector{Int}()
-    ious = similar(dets, N) # large enough to reuse
+    # NB. ious cannot be AllocArrays as it changes the vectorization within bboxiou!, afecting results
+    ious = Vector{eltype(dets)}(undef, N) # large enough to reuse
 
     idx_len = N
     while idx_len > 0
