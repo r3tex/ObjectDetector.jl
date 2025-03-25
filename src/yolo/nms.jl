@@ -62,7 +62,8 @@ function nms(dets::AbstractArray, iou_thresh)
 
         # Compute IoUs between i and rest
         b2_len = idx_len - 1
-        bboxiou!(ious[1:b2_len], view(dets, 1:4, i), view(dets, 1:4, idxs[2:idx_len]))
+        # we must take a view into ious because bboxiou! writes into it
+        bboxiou!(view(ious, 1:b2_len), view(dets, 1:4, i), view(dets, 1:4, idxs[2:idx_len]))
 
         # Compress idxs in-place: keep only boxes with IoU < threshold
         write_idx = 1  # we'll overwrite idxs[2:end] starting at idxs[1]
