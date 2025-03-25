@@ -1,7 +1,7 @@
 name = "ObjectDetector"
 uuid = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
 authors = ["Robert Luciani"]
-version = "0.4.1"
+version = "0.4.2"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -30,7 +30,7 @@ CUDAExt = ["CUDA", "cuDNN"]
 
 [compat]
 Adapt = "4.3.0"
-AllocArrays = "0.4.2"
+AllocArrays = "0.4.2, 1.0"
 BenchmarkTools = "0.4, 0.5, 0.6, 0.7, 1.0"
 CUDA = "4, 5"
 FileIO = "1"
