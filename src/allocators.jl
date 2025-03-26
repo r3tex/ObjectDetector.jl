@@ -9,7 +9,7 @@ function Base.show(io::IO, wm::AllocWrappedModel)
     println(io, "Model:")
     println(io, wm.model)
     println(io, "Allocator:")
-    println(io, wm.allocator)
+    print(io, wm.allocator)
 end
 function (wm::AllocWrappedModel)(args...; kw...)
     with_allocator(wm.allocator) do
