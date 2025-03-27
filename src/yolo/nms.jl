@@ -119,7 +119,7 @@ function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
 
         seen_classes = Set{eltype(class_ids)}()
 
-        @inbounds for (local_col_idx, cls) in enumerate(class_ids)
+        for (local_col_idx, cls) in enumerate(class_ids)
             if cls in seen_classes
                 continue
             end
@@ -134,7 +134,8 @@ function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
 
             scores = @view dets[5, :]
             sorted_idx = sortperm(scores, rev=true)
-            sorted_dets = dets[:, sorted_idx]  # copy, not @view!
+            # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
+            sorted_dets = dets[:, sorted_idx]
 
             keep = nms(sorted_dets, overlapThresh)
 
