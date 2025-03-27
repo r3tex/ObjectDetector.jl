@@ -522,7 +522,7 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
         @timeit to "forward pass" for i in eachindex(yolo.chain) # each chain writes to a predefined output
             @timeit to "layer $i" begin
                 f = yolo.chain[i]
-                out = f(yolo.W[i-1])
+                out = f(yolo.W[i-1]::T)
                 check_w_type(yolo.W[i])
                 yolo.W[i] .= out
             end
@@ -587,13 +587,12 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             else
                 batchsize = yolo.cfg[:batchsize]
                 @timeit to "nms" if profile
-                    Profile.Allocs.clear()
-                    Profile.Allocs.@profile sample_rate=1.0 output = perform_detection_nms(batchout, overlapThresh, batchsize)
-                    Profile.Allocs.print()
+                    Profile.clear()
+                    Profile.@profile ret = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    Profile.print(noisefloor=2.0)
                 else
-                    output = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    ret = perform_detection_nms(batchout, overlapThresh, batchsize)
                 end
-                ret = hcat(output...)
             end
         end
     end

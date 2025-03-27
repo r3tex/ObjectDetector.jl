@@ -1,21 +1,37 @@
 """
-    bboxiou(box1, box2)
+    bboxiou!(out, box1, box2)
 
-Bounding Box Intersection Over Union - removes overlapping boxes for same object
+Compute the Intersection over Union (IoU) between a single bounding box `box1`
+and multiple boxes `box2`, writing results into `out`.
+
+- `box1`: A 4-element vector `[x1, y1, x2, y2]`
+- `box2`: A 4×N matrix, where each column is a bounding box.
+- `out`: A preallocated vector of length N to hold IoU results.
+
+This version avoids allocations by reusing `out`.
 """
-function bboxiou(box1, box2)
+function bboxiou!(out, box1, box2)
     b1x1, b1y1, b1x2, b1y2 = box1
-    b2x1, b2y1, b2x2, b2y2 = view(box2, 1, :), view(box2, 2, :), view(box2, 3, :), view(box2, 4, :)
-    rectx1 = max.(b1x1, b2x1)
-    recty1 = max.(b1y1, b2y1)
-    rectx2 = min.(b1x2, b2x2)
-    recty2 = min.(b1y2, b2y2)
-    z = zeros(length(rectx2))
-    interarea = max.(rectx2 .- rectx1, z) .* max.(recty2 .- recty1, z)
     b1area = (b1x2 - b1x1) * (b1y2 - b1y1)
-    b2area = (b2x2 .- b2x1) .* (b2y2 .- b2y1)
-    iou = interarea ./ (b1area .+ b2area .- interarea)
-    return iou
+
+    @inbounds for i in eachindex(out)
+        b2x1 = box2[1, i]
+        b2y1 = box2[2, i]
+        b2x2 = box2[3, i]
+        b2y2 = box2[4, i]
+
+        rectx1 = max(b1x1, b2x1)
+        recty1 = max(b1y1, b2y1)
+        rectx2 = min(b1x2, b2x2)
+        recty2 = min(b1y2, b2y2)
+
+        w = max(0f0, rectx2 - rectx1)
+        h = max(0f0, recty2 - recty1)
+        inter = w * h
+        b2area = (b2x2 - b2x1) * (b2y2 - b2y1)
+        out[i] = inter / (b1area + b2area - inter)
+    end
+    return out
 end
 
 """
@@ -28,38 +44,42 @@ the overlap threshold above which boxes are considered duplicates.
 
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
 """
-function nms(dets::AbstractArray, iou_thresh)
-    # The bounding box coords are in dets[1:4, :].
-    # The columns are sorted by score already (descending).
-    idxs = collect(1:size(dets, 2))        # candidate column indexes
-    keep = Int[]                            # final picks
+function nms(dets::AbstractArray{T}, iou_thresh) where T
+    N = size(dets, 2)
+    idxs = similar(dets, Int, N)
+    @inbounds for j in 1:N
+        idxs[j] = j
+    end
 
-    while !isempty(idxs)
-        # Pick the top-scoring box (first in the sorted list)
-        i = first(idxs)
+    keep = Vector{Int}()
+    ious = similar(dets, T, N) # large enough to reuse
+
+    idx_len = N
+    while idx_len > 0
+        i = idxs[1]
         push!(keep, i)
 
-        # If there's only one left, no need to compute IoU
-        if length(idxs) == 1
+        if idx_len == 1
             break
         end
 
-        # Compute IoU of the chosen box with the rest
-        # - bboxiou should accept two bounding boxes or a box vs many boxes
-        #   so it returns a vector of IoUs in this usage.
-        iou = bboxiou(dets[1:4, i], dets[1:4, idxs[2:end]])
+        # Compute IoUs between the top candidate and the rest
+        b2_len = idx_len - 1
+        b1 = @view dets[1:4, i]
+        b2s = @view dets[1:4, idxs[2:idx_len]]
+        # we must take a view into ious because bboxiou! writes into it
+        bboxiou!(view(ious, 1:b2_len), b1, b2s)
 
-        # Find which have IoU >= threshold
-        to_remove = findall(≥(iou_thresh), iou)
+        # Build new candidate list, excluding boxes with IoU >= threshold
+        write_idx = 0
+        for j in 1:b2_len
+            if ious[j] < iou_thresh
+                write_idx += 1
+                idxs[write_idx] = idxs[j+1]
+            end
+        end
 
-        # Those indexes in `to_remove` are offset by +1 in the `idxs` array
-        remove_idxs = idxs[to_remove .+ 1]
-
-        # Remove them all from `idxs`
-        filter!(x -> x ∉ remove_idxs, idxs)
-
-        # Also remove the “picked” box (we already kept i)
-        filter!(x -> x != i, idxs)
+        idx_len = write_idx
     end
 
     return keep
@@ -84,41 +104,48 @@ batchout rows:
 - second-to-last row (end-1) has the class index.
 - The last row is the batch index
 """
-function perform_detection_nms(
-    batchout,
-    overlapThresh,
-    batchsize::Int
-)
-    output = []  # array of matrices
+function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
+    output = similar(batchout)
+    i = 1  # index for writing into `output`
 
-    @views for b in 1:batchsize
-        # Get columns that belong to batch b
-        b_idxs = findall(x -> x == b, batchout[end, :])
-        if isempty(b_idxs)
+    for b in 1:batchsize
+        b_cols = findall(==(b), @view(batchout[end, :]))
+        if isempty(b_cols)
             continue
         end
-        page = batchout[:, b_idxs]
 
-        # For each class present in this batch
-        present_classes = unique(page[end-1, :])
-        for c in present_classes
-            # Gather all detections that match class c
-            c_idxs = findall(x -> x == c, page[end-1, :])
+        page = @view batchout[:, b_cols]
+        class_ids = @view page[end-1, :]
+
+        seen_classes = Set{eltype(class_ids)}()
+
+        for (local_col_idx, cls) in enumerate(class_ids)
+            if cls in seen_classes
+                continue
+            end
+            push!(seen_classes, cls)
+
+            c_idxs = findall(==(cls), class_ids)
             if isempty(c_idxs)
                 continue
             end
 
-            # Extract and sort by confidence (the 5th row),
-            # descending:
-            dets = sortslices(page[:, c_idxs], dims=2, by = x -> x[5], rev = true)
+            dets = @view page[:, c_idxs]
 
-            # Run NMS to get the indexes of the columns to keep
-            keep = nms(dets, overlapThresh)
+            scores = @view dets[5, :]
+            sorted_idx = sortperm(scores, rev=true)
+            # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
+            sorted_dets = dets[:, sorted_idx]
 
-            # Save the filtered detections
-            push!(output, dets[:, keep])
+            keep = nms(sorted_dets, overlapThresh)
+
+            # @info "Batch $b, class $cls: input=$(size(sorted_dets, 2)), kept=$(length(keep))"
+
+            @inbounds for k in keep
+                output[:, i] = sorted_dets[:, k]
+                i += 1
+            end
         end
     end
-
-    return output
+    return output[:, 1:i-1]
 end
