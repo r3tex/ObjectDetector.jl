@@ -86,11 +86,11 @@ function nms(dets::AbstractArray{T}, iou_thresh) where T
 end
 
 """
-    perform_detection_nms(batchout, overlapThresh, batchsize)
+    perform_detection_nms(batchout, overlap_thresh, batchsize)
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
 group them by class, sort each group by the 5th column (score) descending, and
-run NMS to remove duplicates using bboxiou and overlapThresh.
+run NMS to remove duplicates using bboxiou and overlap_thresh.
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
 
@@ -104,7 +104,7 @@ batchout rows:
 - second-to-last row (end-1) has the class index.
 - The last row is the batch index
 """
-function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
+function perform_detection_nms(batchout, overlap_thresh, batchsize::Int)
     output = similar(batchout)
     i = 1  # index for writing into `output`
 
@@ -137,7 +137,7 @@ function perform_detection_nms(batchout, overlapThresh, batchsize::Int)
             # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
             sorted_dets = dets[:, sorted_idx]
 
-            keep = nms(sorted_dets, overlapThresh)
+            keep = nms(sorted_dets, overlap_thresh)
 
             # @info "Batch $b, class $cls: input=$(size(sorted_dets, 2)), kept=$(length(keep))"
 

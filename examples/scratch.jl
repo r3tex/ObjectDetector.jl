@@ -10,7 +10,7 @@ img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","do
 batch[:,:,:,1], padding = prepare_image(img, yolomod)
 save(joinpath(@__DIR__,"result.png"), cpu(batch[:,:,:,1]))
 
-@time res = yolomod(batch, detectThresh=0.2, overlapThresh=0.8) # Run the model on the length-1 batch
+@time res = yolomod(batch, detect_thresh=0.2, overlap_thresh=0.8) # Run the model on the length-1 batch
 
 imgBoxes = draw_boxes(img, yolomod, padding, res)
 save(joinpath(@__DIR__,"result.png"), imgBoxes)

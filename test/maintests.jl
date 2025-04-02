@@ -1,6 +1,6 @@
 dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
 oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
-@info "Testing all models with detectThresh = $dThresh, overlapThresh = $oThresh"
+@info "Testing all models with detect_thresh = $dThresh, overlap_thresh = $oThresh"
 
 @testset "Download all artifacts" begin
     @info artifact"yolov2-COCO"
@@ -90,7 +90,7 @@ end
             for b in 1:batch_size
                 batch[:, :, :, b], padding = prepare_image(img, yolomod)
             end
-            res = yolomod(batch, detectThresh  = dThresh, overlapThresh = oThresh);
+            res = yolomod(batch, detect_thresh  = dThresh, overlap_thresh = oThresh);
             expected_objects = 4
             @test size(res) == (89, expected_objects * batch_size)
             @test typeof(res) == Array{Float32, 2}
@@ -109,7 +109,7 @@ end
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])
         batch = emptybatch(yolomod)
         batch[:,:,:,1], padding = prepare_image(img, yolomod)
-        res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh) #run once
+        res = yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh) #run once
         @test size(res,2) > 0
     end
     @testset "Invalid non-square dimensions" begin
@@ -146,7 +146,7 @@ for (k, pretrained) in pairs(pretrained_list)
             mkpath(resultsdir)
             batch[:,:,:,1], padding = prepare_image(img, yolomod)
 
-            val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detectThresh=dThresh, overlapThresh=oThresh);
+            val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh);
             @test size(res,2) > 0
             table[k, 4] = true
             table[k, 5] = round(t_run, digits=4)
