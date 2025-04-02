@@ -56,7 +56,9 @@ img = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
         d_y2 = results[i][3][2] + d_h / 2
         darknet_bbox = Float32[d_x1 / img_w, d_y1 / img_h, d_x2 / img_w, d_y2 / img_h]
         results_xyxy[1:4, i] = darknet_bbox
-        results_xyxy[end, i] = findfirst(==(results[i][1]), names)
+        class_id = findfirst(==(results[i][1]), names)
+        class_id === nothing && @error "Class not found in names file" results[i][1] names
+        results_xyxy[end, i] = class_id
         results_xyxy[end-1, i] = results[i][2]
     end
 
