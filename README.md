@@ -105,7 +105,7 @@ For instance the pretrained models are defined as:
 ```julia
 function v3_COCO(;batch=1, silent=false, cfgchanges=nothing, w=416, h=416)
     cfgchanges=[(:net, 1, :width, w), (:net, 1, :height, h)]
-    Yolo(joinpath(models_dir,"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
+    Yolo(joinpath(ObjectDetector.YOLO.models_dir(),"yolov3-416.cfg"), joinpath(artifact"yolov3-COCO", "yolov3-COCO.weights"), batch, silent=silent, cfgchanges=cfgchanges)
 end
 ```
 

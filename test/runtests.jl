@@ -5,6 +5,7 @@ using LazyArtifacts
 using ReferenceTests
 using CUDA
 using cuDNN
+using Darknet
 
 include("prepare_image.jl")
 include("maintests.jl")
