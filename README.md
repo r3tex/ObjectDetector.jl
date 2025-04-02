@@ -30,7 +30,7 @@ img = load(joinpath(dirname(dirname(pathof(ObjectDetector))),"test","images","do
 
 batch[:,:,:,1], padding = prepare_image(img, yolomod) # Send resized image to the batch
 
-res = yolomod(batch, detectThresh=0.5, overlapThresh=0.8) # Run the model on the length-1 batch
+res = yolomod(batch, detect_thresh=0.5, overlap_thresh=0.8) # Run the model on the length-1 batch
 ```
 
 Note that while the convention in Julia is column-major, where images are loaded
@@ -148,7 +148,7 @@ A 2019 Macbook Pro (CPU-only, no CUDA):
 
 ## Examples
 
-All run with `detectThresh = 0.5`, `overlapThresh = 0.5`
+All run with `detect_thresh = 0.5`, `overlap_thresh = 0.5`
 
 ### YOLO.v2_tiny_416_COCO
 ![v2_tiny_416_COCO](test/results/dog-cycle-car/v2_tiny_416_COCO.png)

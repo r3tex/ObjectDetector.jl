@@ -102,9 +102,9 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         batch = emptybatch(mod)
         batch[:,:,:,1], padding = prepare_image(img, mod)
 
-        res = mod(batch; detectThresh=0.0, overlapThresh=1.0) #run once
-        t_run = @belapsed $mod($batch; detectThresh=0.0, overlapThresh=1.0);
-        t_allocs = @allocated mod(batch; detectThresh=0.0, overlapThresh=1.0)
+        res = mod(batch; detect_thresh=0.0, overlap_thresh=1.0) #run once
+        t_run = @belapsed $mod($batch; detect_thresh=0.0, overlap_thresh=1.0);
+        t_allocs = @allocated mod(batch; detect_thresh=0.0, overlap_thresh=1.0)
         table[i, 4] = size(res, 2)
         table[i, 5] = round(t_run, digits=4)
         table[i, 6] = round(1/t_run, digits=1)

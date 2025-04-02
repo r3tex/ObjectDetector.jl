@@ -498,16 +498,16 @@ check_w_type(::UnsafeArray) = throw(ArgumentError("Internal error: UnsafeArray h
 check_w_type(::Any) = nothing
 
 """
-    (yolo::Yolo)(img::AbstractArray;  detectThresh=nothing, overlapThresh=yolo.out[1][:ignore])
+    (yolo::Yolo)(img::AbstractArray;  detect_thresh=nothing, overlap_thresh=yolo.out[1][:ignore])
 
 Simply pass a batch of images to the yolo object to do inference.
 
-detectThresh: Optionally override the minimum allowable detection confidence
-overalThresh: Optionally override the maximum allowable overlap (IoU)
+detect_thresh: Optionally override the minimum allowable detection confidence
+overlap_thresh: Optionally override the maximum allowable overlap (IoU)
 show_timing::Bool=false: Show timing information for each layer
 conf_fix::Bool=true: Apply fix to the confidence score calculation. Without this the class scores are not multiplied by the box confidence score, as they should be.
 """
-function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, conf_fix=true) where {T <: AbstractArray}
+function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][:ignore], show_timing=false, conf_fix=true) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)
@@ -574,7 +574,7 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
                 weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
                 weights = reshape(weights, a+4, :) # reshape to attr, data
 
-                thresh = detectThresh === nothing ? Float32(out[:truth]) : Float32(detectThresh)
+                thresh = detect_thresh === nothing ? Float32(out[:truth]) : Float32(detect_thresh)
                 clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
                 findmax!(weights, 6, a)
                 push!(outweights, weights)
@@ -593,7 +593,7 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
             else
                 batchsize = yolo.cfg[:batchsize]
                 @timeit to "nms" begin
-                    ret = perform_detection_nms(batchout, overlapThresh, batchsize)
+                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize)
                 end
             end
         end
