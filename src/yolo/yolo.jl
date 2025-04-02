@@ -10,7 +10,6 @@ import Flux
 import Flux: gpu, σ
 using LazyArtifacts
 using TimerOutputs
-using Profile
 using AllocArrays: AllocArray, BumperAllocator
 using UnsafeArrays: UnsafeArray
 
@@ -505,8 +504,10 @@ Simply pass a batch of images to the yolo object to do inference.
 
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
+show_timing::Bool=false: Show timing information for each layer
+conf_fix::Bool=true: Apply fix to the confidence score calculation. Without this the class scores are not multiplied by the box confidence score, as they should be.
 """
-function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
+function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, conf_fix=true) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)
@@ -540,6 +541,11 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
                 # adjust the predicted box coordinates into pixel values
                 weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
                 weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                if conf_fix
+                    # post-sigmoid class confidence scores should be multiplied by the post-sigmoid box confidence score
+                    # see https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/public/yolo-v3-tiny-tf/README.md#original-model-1
+                    weights[:, :, 6:end, :, :] = weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
+                end
                 weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
                 cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
@@ -586,11 +592,7 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
                 ret = batchout # empty or singular output doesn't need further filtering
             else
                 batchsize = yolo.cfg[:batchsize]
-                @timeit to "nms" if profile
-                    Profile.clear()
-                    Profile.@profile ret = perform_detection_nms(batchout, overlapThresh, batchsize)
-                    Profile.print(noisefloor=2.0)
-                else
+                @timeit to "nms" begin
                     ret = perform_detection_nms(batchout, overlapThresh, batchsize)
                 end
             end
