@@ -35,7 +35,7 @@ img = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
     cfgfile = joinpath(ObjectDetector.YOLO.models_dir(), "yolov3-tiny.cfg")
     weightsfile = joinpath(artifact"yolov3-tiny-COCO", "yolov3-tiny-COCO.weights")
     namesfile = joinpath(ObjectDetector.YOLO.models_dir(), "coco.names")
-    names = split(read(namesfile, String), "\n")
+    names = collect(eachline(namesfile))
 
     net = Darknet.load_network(cfgfile, weightsfile, 1)
     meta = Darknet.get_metadata(metafile)
