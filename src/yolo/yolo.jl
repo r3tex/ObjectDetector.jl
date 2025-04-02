@@ -506,7 +506,7 @@ Simply pass a batch of images to the yolo object to do inference.
 detectThresh: Optionally override the minimum allowable detection confidence
 overalThresh: Optionally override the maximum allowable overlap (IoU)
 """
-function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false) where {T <: AbstractArray}
+function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:ignore], show_timing=false, profile=false, apply_fix=true) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)
@@ -540,6 +540,11 @@ function (yolo::Yolo)(img::T; detectThresh=nothing, overlapThresh=yolo.out[1][:i
                 # adjust the predicted box coordinates into pixel values
                 weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
                 weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                if apply_fix
+                    # IIUC post-sigmoid class confidence scores should be multiplied by the post-sigmoid box confidence score
+                    # see https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/public/yolo-v3-tiny-tf/README.md#original-model-1
+                    weights[:, :, 6:end, :, :] = weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
+                end
                 weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
                 cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
