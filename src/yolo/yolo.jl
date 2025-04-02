@@ -4,7 +4,7 @@ export get_input_size
 import ..to, ..AbstractModel, ..get_input_size, ..wrap_model, ..uses_gpu, ..get_cfg
 #import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
-const models_dir = joinpath(@__DIR__, "models")
+models_dir() = joinpath(@__DIR__, "models")
 
 import Flux
 import Flux: gpu, σ
