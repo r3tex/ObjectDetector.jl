@@ -134,6 +134,13 @@ YOLO wants a leakyrelu with a fixed leakyness of 0.1 so we define our own
 leaky(x, a = oftype(x/1, 0.1)) = max(a*x, x/1)
 
 """
+    logistic(x)
+
+Another name for sigmoid (σ).
+"""
+logistic(x) = σ(x)
+
+"""
     mish(x)
 
 Mish is a smooth, non-monotonic activation function proposed as an alternative to ReLU, Swish, and others.
@@ -192,6 +199,7 @@ end
 const ACT = Dict(
     "leaky" => leaky,
     "linear" => identity,
+    "logistic" => logistic,
     "mish" => mish,
     "swish" => swish,
 )
@@ -281,8 +289,8 @@ mutable struct Yolo <: AbstractModel
         assertdimconform(cfgvec)
 
         cfg = cfgvec[1][2]
-        yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
-        cfg[:yoloversion] = yoloversion
+        cfg[:cfgname] = basename(cfgfile)
+        cfg[:laststage] = any(first.(cfgvec) .== :region) ? :region : :yolo
         weightbytes = if dummy
             nothing # readweights knows to make up dummy weights if this is nothing
         else
@@ -344,21 +352,27 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
             elseif blocktype == :route
-                idx1 = length(fn) + block[:layers][1] + 1
-                if length(block[:layers]) > 1
-                    if block[:layers][2] > 0
-                        idx2 = block[:layers][2] + 1
-                    else
-                        idx2 = length(fn) + block[:layers][2] + 1 # Handle -ve route selections
-                    end
+                layers = block[:layers]
+                idx1 = layers[1] < 0 ? length(fn) + layers[1] + 1 : layers[1] + 1
+
+                if length(layers) > 1
+                    idx2 = layers[2] < 0 ? length(fn) + layers[2] + 1 : layers[2] + 1
                     push!(ch, ch[idx1] + ch[idx2])
-                    push!(fn, (idx2, :cat)) # cat two layers along the channel dim
+                    push!(fn, (idx2, :cat))
                 else
-                    idx2 = ""
-                    push!(ch, ch[idx1])
-                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
+                    route_channels = ch[idx1]
+
+                    if haskey(block, :groups)
+                        groups = block[:groups]
+                        # group_id = block[:group_id]
+                        ch_out = route_channels ÷ groups
+                        push!(ch, ch_out)
+                    else
+                        push!(ch, route_channels)
+                    end
+                    push!(fn, (idx1, :route, block))
                 end
-                !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($(length(fn))) ","route($(join(layers,",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + length(fn)+1
@@ -383,7 +397,7 @@ mutable struct Yolo <: AbstractModel
         # Create test batch. Note that darknet is row-major, so width-first
         test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
+        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x === nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
@@ -392,6 +406,10 @@ mutable struct Yolo <: AbstractModel
         for i in 2:length(needout)
             !silent && print("$(i-1) ")
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
+            if fst > lst
+                # TODO: I'm not sure if this is right.. it just avoids issues when it's a negative range..
+                continue
+            end
             if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
@@ -402,9 +420,15 @@ mutable struct Yolo <: AbstractModel
                     arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
                     if skip_type == :route
-                        fn[j] = _route(identity(W[arrayidx]))
+                        if length(fn[j]) == 3 && haskey(fn[j][3], :groups)
+                            groups = fn[j][3][:groups]
+                            group_id = fn[j][3][:group_id]
+                            fn[j] = _route(W[arrayidx][:, :, group_id*(size(W[arrayidx], 3) ÷ groups) + 1 : (group_id+1)*(size(W[arrayidx], 3) ÷ groups), :])
+                        else
+                            fn[j] = _route(W[arrayidx])
+                        end
                     elseif skip_type == :add
-                        fn[j] =  _add(W[arrayidx])
+                        fn[j] = _add(W[arrayidx])
                     elseif skip_type == :cat
                         fn[j] = _cat(W[arrayidx])
                     else
@@ -500,7 +524,7 @@ get_input_size(model::Yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], 
 function Base.show(io::IO, yolo::Yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
-    ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
+    ln1 = "$(yolo.cfg[:cfgname]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
     ln3 = "gridsize: $(yolo.cfg[:gridsize][1])x$(yolo.cfg[:gridsize][2])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
@@ -608,7 +632,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
                 # Convert to image width & height scale (0.0-1.0)
                 weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
                 weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
-                if yolo.cfg[:yoloversion] == 2
+                if yolo.cfg[:laststage] == :region # indicates yolov2
                     weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
                     weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
                 else
