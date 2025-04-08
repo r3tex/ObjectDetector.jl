@@ -8,6 +8,10 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
     @info artifact"yolov3-COCO"
     @info artifact"yolov3-spp-COCO"
     @info artifact"yolov3-tiny-COCO"
+    @info artifact"yolov4-COCO"
+    @info artifact"yolov4-tiny-COCO"
+    @info artifact"yolov7-COCO"
+    @info artifact"yolov7-tiny-COCO"
     @info "All artifacts downloaded"
 end
 
