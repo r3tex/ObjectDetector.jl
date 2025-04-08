@@ -5,7 +5,7 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 psnr_thresh = 35.0
 
 @testset "Download all artifacts" begin
-    artifact"yolov2-COCO"
+    # artifact"yolov2-COCO" # broken, see below
     artifact"yolov2-tiny-COCO"
     artifact"yolov3-COCO"
     artifact"yolov3-spp-COCO"
@@ -19,13 +19,7 @@ end
 Darknet.download_defaults()
 
 const skip_models = (
-    "v2_COCO",          # reorg issue
-    "v2_tiny_COCO",     # bad results
-    "v3_spp_COCO",      # SPP not supported
-    "v4_COCO",          # not supported
-    "v4_tiny_COCO",     # not supported
-    "v7_COCO",          # not supported
-    "v7_tiny_COCO",     # not supported
+    "v2-COCO", # Not all weights are read during load: Read 196856372 bytes. Filesize 203934260 bytes
 )
 
 const testimages = ["dog-cycle-car", "dog-cycle-car_nonsquare"]

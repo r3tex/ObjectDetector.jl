@@ -65,12 +65,18 @@ save("result.png", imgBoxes)
 The darknet YOLO models from https://pjreddie.com/darknet/yolo/ that are pretrained on the COCO dataset are available:
 
 ```julia
-YOLO.v2_COCO() #Currently broken
+YOLO.v2_COCO() #Currently broken (weights seem bad, model may work with custom weights)
 YOLO.v2_tiny_COCO()
 
 YOLO.v3_COCO()
-YOLO.v3_spp_608_COCO() #Currently broken
+YOLO.v3_spp_608_COCO()
 YOLO.v3_tiny_COCO()
+
+YOLO.v4_COCO()
+YOLO.v4_tiny_COCO()
+
+YOLO.v7_COCO()
+YOLO.v7_tiny_COCO()
 ```
 Their width and height can be modified with:
 ```julia
@@ -94,6 +100,7 @@ YOLO.v3_416_COCO()
 YOLO.v3_608_COCO()
 YOLO.v3_spp_608_COCO()
 YOLO.v3_tiny_416_COCO()
+etc.
 ```
 
 Or custom models can be loaded with:
@@ -116,12 +123,11 @@ The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3
 Pretrained models can be easily tested with `ObjectDetector.benchmark()`.
 
 Note that the benchmark was run once before the examples here. Initial load time
-of the first model loaded is typically between 3-20 seconds. See the [package-compilation](#package-compilation)  section below for compilation instructions to speed up loading.
+of the first model loaded is typically between 3-20 seconds.
 
 A desktop with a GTX 2060:
 ```
 julia> ObjectDetector.benchmark()
-
 ┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
 │            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
 ├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
@@ -133,17 +139,20 @@ julia> ObjectDetector.benchmark()
 └──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
 ```
 
-A 2019 Macbook Pro (CPU-only, no CUDA):
+A M2 Macbook Pro (CPU-only, no CUDA):
 ```
-┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
-│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
-├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
-│ v2_tiny_416_COCO │    true │         0.305 │ true │       0.1383 │            7.2 │
-│ v3_tiny_416_COCO │    true │         0.267 │ true │       0.1711 │            5.8 │
-│      v3_320_COCO │    true │         1.617 │ true │       0.8335 │            1.2 │
-│      v3_416_COCO │    true │         2.377 │ true │       1.4138 │            0.7 │
-│      v3_608_COCO │    true │         4.239 │ true │       3.1122 │            0.3 │
-└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
+julia> ObjectDetector.benchmark()
+┌──────────────────┬─────────┬───────────────┬──────────┬──────────────┬────────────────┬─────────────┐
+│            Model │ loaded? │ load time (s) │ #results │ run time (s) │ run time (fps) │ allocations │
+├──────────────────┼─────────┼───────────────┼──────────┼──────────────┼────────────────┼─────────────┤
+│ v2_tiny_416_COCO │    true │         0.103 │      845 │       0.0372 │           26.9 │ 698.984 KiB │
+│ v3_tiny_416_COCO │    true │         0.088 │     2535 │       0.0422 │           23.7 │   1.907 MiB │
+│ v4_tiny_416_COCO │    true │         0.097 │     2535 │       0.0553 │           18.1 │   1.915 MiB │
+│ v7_tiny_416_COCO │    true │         0.162 │    10647 │       0.1222 │            8.2 │   7.729 MiB │
+│      v3_416_COCO │    true │         0.676 │    10647 │       0.3511 │            2.8 │   7.916 MiB │
+│      v4_416_COCO │    true │         1.102 │    10647 │       0.6237 │            1.6 │   8.066 MiB │
+│      v7_416_COCO │    true │         0.699 │    10647 │       0.5414 │            1.8 │   7.886 MiB │
+└──────────────────┴─────────┴───────────────┴──────────┴──────────────┴────────────────┴─────────────┘
 ```
 
 ## Examples
@@ -165,22 +174,5 @@ All run with `detect_thresh = 0.5`, `overlap_thresh = 0.5`
 ### YOLO.v3_608_COCO
 ![v3_608_COCO](test/results/dog-cycle-car/v3_608_COCO.png)
 
+###
 
-## Package Compilation
-
-If initial load times are critical, the package can be compiled and loaded as a
-sysimage, such that initial load time reduces to ~4 seconds, and loading of the
-first model also takes ~4 seconds (as opposed to current performance on 1.3.0 of
-~20 seconds for package load, and ~20 seconds for first model load).
-
-See [dev/compilation/compiler.jl](dev/compilation/compiler.jl) for instructions.
-
-[discourse-tag-url]: https://discourse.julialang.org/tags/yolo
-
-[codecov-img]: https://codecov.io/gh/r3tex/ObjectDetector.jl/branch/master/graph/badge.svg
-[codecov-url]: https://codecov.io/gh/r3tex/ObjectDetector.jl
-
-[coveralls-img]: https://coveralls.io/repos/github/r3tex/ObjectDetector.jl/badge.svg?branch=master
-[coveralls-url]: https://coveralls.io/github/r3tex/ObjectDetector.jl?branch=master
-
-[issues-url]: https://github.com/r3tex/ObjectDetector.jl/issues

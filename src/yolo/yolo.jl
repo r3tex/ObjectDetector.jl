@@ -111,12 +111,109 @@ end
 ########################################################
 ##### FUNCTIONS NEEDED FOR THE YOLO CONSTRUCTOR ########
 ########################################################
-"""
-    leaky(x, a = oftype(x/1, 0.1))
 
-YOLO wants a leakyrelu with a fixed leakyness of 0.1 so we define our own
-"""
-leaky(x, a = oftype(x/1, 0.1)) = max(a*x, x/1)
+# These match https://github.com/AlexeyAB/darknet/blob/9ade741db91fd3d796d2abb0c9889b10943ea28a/src/activation_kernels.cu#L28
+
+# Matches: lhtan_activate_kernel
+lhtan(x) = x < 0f0 ? 0.001f0 * x :
+           x > 1f0 ? 0.001f0 * (x - 1f0) + 1f0 :
+                     x
+
+# Matches: lhtan_gradient_kernel
+lhtan_grad(x) = (x > 0f0 && x < 1f0) ? 1f0 : 0.001f0
+
+# Matches: hardtan_activate_kernel
+hardtan(x) = clamp(x, -1f0, 1f0)
+
+# Matches: linear_activate_kernel
+linear(x) = x
+
+# Matches: logistic_activate_kernel
+logistic(x) = 1f0 / (1f0 + exp(-x))
+
+# Matches: loggy_activate_kernel
+loggy(x) = 2f0 / (1f0 + exp(-x)) - 1f0
+
+# Matches: relu_activate_kernel
+relu(x) = x > 0 ? x : zero(x)
+
+# Matches: relu6_activate_kernel
+relu6(x) = clamp(x, 0f0, 6f0)
+
+# Matches: elu_activate_kernel
+elu(x) = x >= 0 ? x : exp(x) - 1f0
+
+# Matches: selu_activate_kernel
+selu(x) = x >= 0 ? 1.0507f0 * x : 1.0507f0 * 1.6732f0 * (exp(x) - 1f0)
+
+# Matches: relie_activate_kernel
+relie(x) = x > 0 ? x : 0.01f0 * x
+
+# Matches: ramp_activate_kernel
+ramp(x) = x > 0 ? x : 0.1f0 * x
+
+# Matches: leaky_activate_kernel
+leaky(x) = x > 0 ? x : 0.1f0 * x
+
+# Matches: tanh_activate_kernel
+tanh_activate(x) = 2f0 / (1f0 + exp(-2f0 * x)) - 1f0
+
+# Matches: gelu_activate_kernel (approximation using tanh)
+gelu(x) = 0.5f0 * x * (1f0 + tanh(0.797885f0 * x + 0.035677f0 * x^3))
+
+# Matches: softplus_kernel
+softplus(x; threshold=20f0) =
+    x > threshold ? x :
+    x < -threshold ? exp(x) :
+    log1p(exp(x))
+
+# Matches: plse_activate_kernel
+plse(x) = x < -4f0 ? 0.01f0 * (x + 4f0) :
+          x >  4f0 ? 0.01f0 * (x - 4f0) + 1f0 :
+          0.125f0 * x + 0.5f0
+
+# Matches: stair_activate_kernel
+stair(x) = begin
+    n = floor(Int, x)
+    iseven(n) ? floor(x / 2f0) : (x - n) + floor(x / 2f0)
+end
+
+# Matches: mish_yashas2 (apparently this works better on gpu?)
+mish_fast(x) = begin
+    e = exp(x)
+    n = e * e + 2 * e
+    x <= -0.6 ? x * n / (n + 2) : x - 2 * x / (n + 2)
+end
+
+# Classical definition
+# mish(x) = x * tanh(softplus(x))
+
+# Based on activate_array_swish_kernel
+swish(x) = x * σ(x)
+
+
+# Use this dict to translate the config activation names to function names
+const ACT = Dict(
+    "linear"    => linear,
+    "logistic"  => logistic,
+    "loggy"     => loggy,
+    "relu"      => relu,
+    "relu6"     => relu6,
+    "elu"       => elu,
+    "selu"      => selu,
+    "relie"     => relie,
+    "ramp"      => ramp,
+    "leaky"     => leaky,
+    "tanh"      => tanh_activate,
+    "gelu"      => gelu,
+    "softplus"  => softplus,
+    "mish"      => mish_fast,
+    "swish"     => swish,
+    "plse"      => plse,
+    "stair"     => stair,
+    "lhtan"     => lhtan,
+    "hardtan"   => hardtan,
+)
 
 """
     prettyprint(str, col)
@@ -159,12 +256,6 @@ function reorg(a, stride)
     return reshape(a, (w // stride, h // stride, c*(stride^2)))
 end
 
-# Use this dict to translate the config activation names to function names
-const ACT = Dict(
-    "leaky" => leaky,
-    "linear" => identity
-)
-
 """
     overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,Any}}}, cfgchanges::Vector{Tuple{Symbol,Int,Symbol,Any}})
 
@@ -201,17 +292,99 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
-function maxpool(x; siz, stride)
-    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
-end
-
 _broadcast(act) = x -> act.(x)
 _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
-_add(val) = x -> x + val
-_cat(val) = x -> cat(x, val, dims = 3)
-_maxpool(siz, stride) = x -> maxpool(x; siz, stride)
+_add(val, act) = x -> act.(x + val)
+_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
+
+flux_maxpool = true
+@static if flux_maxpool
+    ## Flux maxpool approach
+    function _maxpool(siz, stride)
+        # For a 2x2 pool, use explicit padding to preserve dimensions.
+        pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
+        return x -> maxpool(x; siz, stride, pad)
+    end
+    function maxpool(x; siz, stride, pad)
+        return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
+    end
+else
+    ## Direct copy of darknet maxpool approach
+    function _maxpool(siz, stride)
+        pad = if siz == 2 && stride == 1
+            # For a 2×2 pool with stride=1, pad asymmetrically so that
+            # for an odd input (e.g. 13) the effective input becomes 14,
+            # producing an output of 13.
+            1
+        elseif siz == 2 && stride == 2
+            0
+        else
+            div(siz, 2)
+        end
+        return x -> darknet_maxpool_layer(x, siz, (stride, stride), pad)
+    end
+    function maxpool(x::AbstractArray{Float32,4},
+        siz::Int,
+        stride::Tuple{Int,Int},
+        pad::Int;
+        return_indexes::Bool=false)
+        # x: input array with dimensions (H, W, C, N)
+        # siz: pooling window size (e.g., 2)
+        # stride: (stride_y, stride_x)
+        # pad: total padding (as in Darknet, where often for 2×2, stride=1, pad is set so that the
+        #      effective input is increased asymetrically)
+        # return_indexes: if true, also return the indexes of the max values.
+        H, W, C, N = size(x)
+        stride_y, stride_x = stride
+        out_h = div(H + pad - siz, stride_y) + 1
+        out_w = div(W + pad - siz, stride_x) + 1
+
+        # Allocate output; note we set the pool default to -Inf
+        y = fill(-Inf32, out_h, out_w, C, N)
+        idx = return_indexes ? similar(y, Int) : nothing
+
+        # Compute offsets as in Darknet:
+        #   h_offset = -l.pad/2,  w_offset = -l.pad/2.
+        h_offset = -div(pad, 2)
+        w_offset = -div(pad, 2)
+
+        # Loop over batch, channel, and output spatial locations.
+        # In Darknet, the loops are ordered as: batch, channel, out_h, out_w
+        for b in 1:N
+            for k in 1:C
+                for i in 1:out_h
+                    for j in 1:out_w
+                        max_val = -Inf32
+                        max_index = -1  # default (could be left as -1 if no valid element is found)
+                        # Loop over the pooling window:
+                        for n in 0:(siz-1)
+                            for m in 0:(siz-1)
+                                # Compute current position, adjusting for 1-indexed Julia arrays:
+                                cur_h = h_offset + (i - 1) * stride_y + n + 1
+                                cur_w = w_offset + (j - 1) * stride_x + m + 1
+                                if cur_h >= 1 && cur_h <= H && cur_w >= 1 && cur_w <= W
+                                    val = x[cur_h, cur_w, k, b]
+                                    if val > max_val
+                                        max_val = val
+                                        # Save linear index (or you could choose to store a CartesianIndex)
+                                        max_index = LinearIndices(x)[CartesianIndex(cur_h, cur_w, k, b)]
+                                    end
+                                end
+                            end
+                        end
+                        y[i, j, k, b] = max_val
+                        if return_indexes
+                            idx[i, j, k, b] = max_index
+                        end
+                    end
+                end
+            end
+        end
+        return return_indexes ? (y, idx) : y
+    end
+end
 
 ########################################################
 ##### THE YOLO OBJECT AND CONSTRUCTOR ##################
@@ -277,16 +450,21 @@ mutable struct Yolo <: AbstractModel
 
         # PART 1 - THE LAYERS
         #####################
+        cfg_idx = 0
         ch = [cfg[:channels]] # this keeps track of channels per layer for creating convolutions
+        first_chan_removed = false
         fn = Array{Any, 1}(nothing, 0) # this keeps the 'function' generated by every layer
+        acts = Dict{Int, String}()
         for (blocktype, block) in cfgvec[2:end]
-            if blocktype == :convolutional
+            cfg_idx += 1
+            if blocktype === :convolutional
                 stack   = []
                 kern    = block[:size]
                 filters = block[:filters]
                 pad     = Bool(block[:pad]) ? div(kern-1, 2) : 0
                 stride  = block[:stride]
                 act     = ACT[block[:activation]]
+                acts[cfg_idx] = block[:activation]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = try
                     readweights(weightbytes, kern, ch[end], filters, bn; old_darknet)
@@ -296,62 +474,97 @@ mutable struct Yolo <: AbstractModel
                     rethrow()
                 end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
+                # push!(stack, x -> begin
+                #     _out = maybe_gpu(Flux.Conv(cw, cb; stride=stride, pad=pad, dilation=1))(x)
+                #     @info "Layer conv $(size(x)) => $(size(_out))"
+                #     return _out
+                # end)
                 bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
-                !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
-                ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
-            elseif blocktype == :upsample
+                !silent && prettyprint(["($cfg_idx) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
+                if !first_chan_removed
+                    deleteat!(ch, 1) # remove first channel after use
+                    first_chan_removed = true
+                end
+            elseif blocktype === :upsample
                 stride = block[:stride]
                 push!(fn, _upsample(stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
-            elseif blocktype == :reorg
+                !silent && prettyprint(["($cfg_idx) ","upsample($stride)"," => "],[:blue,:magenta,:green])
+            elseif blocktype === :reorg
                 stride = block[:stride]
                 push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
-            elseif blocktype == :maxpool
+                !silent && prettyprint(["($cfg_idx) ","reorg($stride)"," => "],[:blue,:magenta,:green])
+            elseif blocktype === :maxpool
                 siz = block[:size]
                 stride = block[:stride]
                 push!(fn, _maxpool(siz, stride))
+                # push!(fn, x -> begin
+                #     _out = _maxpool(siz, stride)(x)
+                #     @info "Layer maxpool(siz=$siz, stride=$stride) $(size(x)) => $(size(_out))"
+                #     return _out
+                # end)
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($cfg_idx) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
-            elseif blocktype == :route
-                idx1 = length(fn) + block[:layers][1] + 1
-                if length(block[:layers]) > 1
-                    if block[:layers][2] > 0
-                        idx2 = block[:layers][2] + 1
-                    else
-                        idx2 = length(fn) + block[:layers][2] + 1 # Handle -ve route selections
-                    end
-                    push!(ch, ch[idx1] + ch[idx2])
-                    push!(fn, (idx2, :cat)) # cat two layers along the channel dim
+            elseif blocktype === :route
+                layers = block[:layers]
+                # negative values are relative to the current layer. -1 means the layer before
+                # positive values are absolute layer numbers but need to be corrected to one-based indexing
+                indices = map(l -> l < 0 ? (cfg_idx + l) : l + 1, layers)
+
+                if haskey(block, :groups) && haskey(block, :group_id)
+                    @assert length(indices) == 1 "Grouped route only makes sense with a single input layer"
+                    channels = ch[indices[1]] ÷ block[:groups]
                 else
-                    idx2 = ""
-                    push!(ch, ch[idx1])
-                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
+                    channels = sum(ch[i] for i in indices)
                 end
-                !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
-            elseif blocktype == :shortcut
-                act = ACT[block[:activation]]
-                idx = block[:from] + length(fn)+1
-                push!(fn, (idx, :add)) # take two layers with equal num of channels and adds their values
+                push!(ch, channels)
+
+                # Store metadata in case we need it later during `_route`
+                if haskey(block, :groups)
+                    push!(fn, (indices, :route, block))
+                    if !silent
+                        desc = "route($(indices[1]), groups=$(block[:groups]), group_id=$(block[:group_id]))"
+                        prettyprint(["\n($(length(fn))) ",desc," => "],[:blue,:cyan,:green])
+                    end
+                    continue
+                elseif length(indices) > 1
+                    push!(fn, (indices, :cat))
+                else
+                    push!(fn, (indices[1], :route))
+                end
+                !silent && prettyprint(["\n($(length(fn))) ","route($(join(indices, ",")))"," => "],[:blue,:cyan,:green])
+            elseif blocktype === :shortcut
+                idx = block[:from] + cfg_idx
+                act = haskey(block, :activation) ? ACT[block[:activation]] : linear
+                push!(fn, (idx, :add, act))
                 push!(ch, ch[end])
-                !silent && prettyprint(["\n($(length(fn))) ","shortcut($idx,$(length(fn)-1))"," => "],[:blue,:cyan,:green])
-            elseif blocktype == :yolo
+                !silent && prettyprint(["\n($cfg_idx) ","shortcut($idx,$cfg_idx)"," => "],[:blue,:cyan,:green])
+            elseif blocktype in (:yolo, :region)
+                get!(block, :iou_loss, "mse")
+                get!(block, :nms_kind, :greedynms)
+                get!(block, :beta_nms, 0.6)
+                get!(block, :scale_x_y, 1.0f0)
+                get!(block, :new_coords, 0)
+                block[:final_conv_activation] = get(acts, cfg_idx-1, "linear")
                 push!(fn, nothing) # not a real layer. used for bounding boxes etc...
                 push!(ch, ch[end])
                 push!(cfg[:output], block)
-                !silent && prettyprint(["($(length(fn))) ","YOLO"," || "],[:blue,:yellow,:green])
-            elseif blocktype == :region
-                push!(fn, nothing) # not a real layer. used for bounding boxes etc...
-                push!(ch, ch[end])
-                push!(cfg[:output], block)
-                !silent && prettyprint(["($(length(fn))) ","region"," || "],[:blue,:yellow,:green])
+                !silent && prettyprint(["($cfg_idx) ","$blocktype"," || "],[:blue,:yellow,:green])
+            else
+                error("Unknown layer type $blocktype")
             end
+        end
+
+        # Sanity check that all weights were used
+        if weightbytes !== nothing && !eof(weightbytes)
+            fsize = filesize(weightfile)
+            read_bytes = position(weightbytes)
+            error("Not all weights were read. Check that the weights file matches the cfg file. Read $(read_bytes) bytes. Filesize $(fsize) bytes.")
         end
 
         # PART 2 - THE SKIPS
@@ -359,14 +572,27 @@ mutable struct Yolo <: AbstractModel
         # Create test batch. Note that darknet is row-major, so width-first
         test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x === nothing, fn) .- 1))
+        skip_idxs = Int[]
+        for (i, f) in enumerate(fn)
+            if f isa Tuple
+                if f[1] isa AbstractVector
+                    append!(skip_idxs, f[1])
+                else
+                    push!(skip_idxs, f[1])
+                end
+            elseif f === nothing
+                push!(skip_idxs, i - 1)
+            end
+        end
+        needout = sort(unique(vcat(0, skip_idxs)))
+
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
         for i in eachindex(needout)[2:end]
-            !silent && print(rpad(string(i-1), 4))
+            !silent && print(rpad("$(i-1))", 4))
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
             if fn[fst] === nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
@@ -377,14 +603,26 @@ mutable struct Yolo <: AbstractModel
             !silent && print(rpad(string(range), 8))
             for j in range
                 if typeof(fn[j]) <: Tuple
-                    arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
-                    if skip_type == :route
-                        fn[j] = _route(identity(W[arrayidx]))
-                    elseif skip_type == :add
-                        fn[j] =  _add(W[arrayidx])
-                    elseif skip_type == :cat
-                        fn[j] = _cat(W[arrayidx])
+                    if skip_type === :route
+                        arrayidx = layer2out[fn[j][1]]
+                        if length(fn[j]) == 3 && haskey(fn[j][3], :groups)
+                            groups = fn[j][3][:groups]
+                            group_id = fn[j][3][:group_id] # zero-based (this is usually 1, so the 2nd group)
+                            group_size = size(W[arrayidx], 3) ÷ groups
+                            group_start = group_id * group_size + 1
+                            group_end = (group_id+1) * group_size
+                            fn[j] = _route(W[arrayidx][:, :, group_start:group_end, :])
+                        else
+                            fn[j] = _route(W[arrayidx])
+                        end
+                    elseif skip_type === :add
+                        arrayidx = layer2out[fn[j][1]]
+                        act = fn[j][3]
+                        fn[j] = _add(W[arrayidx], act)
+                    elseif skip_type === :cat
+                        indices = fn[j][1]
+                        fn[j] = _cat([W[layer2out[ind]] for ind in indices]...)
                     else
                         error("Unknown skip layer $skip_type")
                     end
@@ -415,6 +653,7 @@ mutable struct Yolo <: AbstractModel
             if haskey(cfg[:output][i], :mask)
                 anchormask = cfg[:output][i][:mask] .+ 1 # check which anchors are necessary from the config
             else
+                # Use all anchors (length(anchors) / 2 because each anchor has 2 vals)
                 anchormask = 1:round(Int, length(cfg[:output][i][:anchors])/2)
             end
             anchorvals = reshape(cfg[:output][i][:anchors], 2, :)[:, anchormask] ./ [stridew, strideh]
@@ -448,6 +687,10 @@ mutable struct Yolo <: AbstractModel
             get!(cfg[:output][i], :ignore_thresh, 1.0) # for ignoring detections of same object (overlapping)
             out[i][:truth_thresh] = cfg[:output][i][:truth_thresh]
             out[i][:ignore_thresh] = cfg[:output][i][:ignore_thresh]
+            out[i][:scale_x_y] = cfg[:output][i][:scale_x_y]
+            out[i][:nms_kind] = Symbol(cfg[:output][i][:nms_kind])
+            out[i][:beta_nms] = Float32(cfg[:output][i][:beta_nms])
+            out[i][:final_conv_activation] = cfg[:output][i][:final_conv_activation]
         end
 
         yolomod = new(cfg, Flux.Chain(chainstack), W, out, uses_gpu)
@@ -492,6 +735,7 @@ Sets all values under a given threshold to zero
 """
 function clipdetect!(input::AbstractArray, conf)
     @inbounds for i in axes(input, 2)
+        # class_confidence is at end-2. Must be computed before this in findmax!
         if input[end-2, i] < conf
             input[end-2, i] = 0f0
         end
@@ -570,15 +814,32 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 outnr += 1
                 w, h, a, bo, ba = out[:size]
                 weights = reshape(yolo.W[out[:idx]], w, h, a, bo, ba)
+                sxy = out[:scale_x_y]
                 # adjust the predicted box coordinates into pixel values
-                weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) + out[:offset]) .* out[:scale]
-                weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                if yolo.cfg[:output][outnr][:new_coords] == 1
+                    if haskey(yolo.cfg[:output][outnr], :max_delta)
+                        delta = Float32(yolo.cfg[:output][outnr][:max_delta])
+                        clamp!(weights[:, :, 1:2, :, :], -delta, delta)
+                    end
+                    weights[:, :, 1:2, :, :] = (weights[:, :, 1:2, :, :] .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] = (weights[:, :, 3:4, :, :] .* sxy).^2 .* out[:anchor]
+                else
+                    # Classic behavior
+                    weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+                end
+
+                # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
+                # preceding conv layer activation was NOT logistic (e.g., it was linear)
+                if out[:final_conv_activation] != "logistic"
+                    weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                end
+
                 if conf_fix
                     # post-sigmoid class confidence scores should be multiplied by the post-sigmoid box confidence score
                     # see https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/public/yolo-v3-tiny-tf/README.md#original-model-1
                     weights[:, :, 6:end, :, :] = weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
                 end
-                weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
                 # Convert to image width & height scale (0.0-1.0)
                 weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
@@ -621,7 +882,9 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 batchsize = yolo.cfg[:batchsize]
                 @timeit to "nms" begin
                     overlap_thresh = Float32(@something overlap_thresh yolo.out[1][:ignore_thresh])
-                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize)
+                    nms_kind = yolo.out[1][:nms_kind]
+                    beta_nms = yolo.out[1][:beta_nms]
+                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize; kind=nms_kind, beta=beta_nms)
                 end
             end
         end
