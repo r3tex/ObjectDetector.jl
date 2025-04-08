@@ -71,20 +71,45 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer, Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
     dummy = isnothing(bytes)
+
+    # Helper to read Float32 arrays safely from raw bytes
+    function read_array(io::IOBuffer, n::Int)
+        data = read(io, n * sizeof(Float32))
+        reinterpret(Float32, data)
+    end
+
+    # Read batch norm params or fill with dummy ones
     if bn
-        bb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bw = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bm = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bv = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cb = zeros(Float32, fl)
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
+        bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
+        bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
+        cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
+
+        if dummy
+            cw = ones(Float32, kern, kern, ch, fl)
+        else
+            raw = read_array(bytes, kern * kern * ch * fl)
+            length(raw) == kern * kern * ch * fl || error("Weight size mismatch in conv layer with BN. Tried to read $(kern * kern * ch * fl) Float32 elements, got $(length(raw)).")
+            cw = reshape(raw, kern, kern, ch, fl)
+        end
+
         cw = Float32.(flip(cw))
         return cw, cb, bb, bw, bm, bv
+
     else
-        cb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cb = dummy ? ones(Float32, fl) : read_array(bytes, fl)
+
+        if dummy
+            cw = ones(Float32, kern, kern, ch, fl)
+        else
+            raw = read_array(bytes, kern * kern * ch * fl)
+            length(raw) == kern * kern * ch * fl || error("Weight size mismatch in conv layer without BN. Tried to read $(kern * kern * ch * fl) Float32 elements, got $(length(raw)).")
+            cw = reshape(raw, kern, kern, ch, fl)
+        end
+
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
