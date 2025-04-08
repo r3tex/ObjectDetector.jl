@@ -287,7 +287,12 @@ mutable struct Yolo <: AbstractModel
                 stride  = block[:stride]
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
-                cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
+                cw, cb, bb, bw, bm, bv = try
+                    readweights(weightbytes, kern, ch[end], filters, bn)
+                catch
+                    @error "Error reading weights for layer $(length(fn)+1) of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
+                    rethrow()
+                end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
