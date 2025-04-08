@@ -290,6 +290,7 @@ mutable struct Yolo <: AbstractModel
                 cw, cb, bb, bw, bm, bv = try
                     readweights(weightbytes, kern, ch[end], filters, bn)
                 catch
+                    !silent && println()
                     @error "Error reading weights for layer $(length(fn)+1) of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
                     rethrow()
                 end
