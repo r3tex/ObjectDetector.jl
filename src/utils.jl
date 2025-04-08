@@ -69,19 +69,21 @@ end
 
 
 """
-    benchmark(;select = [1,3,4,5,6], reverseAfter:Bool=false)
+    benchmark(;select = [1,2,6], reverseAfter:Bool=false)
 
 Convenient benchmarking
 """
-function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
+function benchmark(;select = [1,2,6], reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
     pretrained_list = [
                         YOLO.v2_tiny_416_COCO,
-                        YOLO.v2_608_COCO,
                         YOLO.v3_tiny_416_COCO,
-                        YOLO.v3_320_COCO,
+                        YOLO.v4_tiny_416_COCO,
+                        YOLO.v7_tiny_416_COCO,
+                        YOLO.v2_416_COCO, # broken weights?
                         YOLO.v3_416_COCO,
-                        YOLO.v3_608_COCO,
-                        YOLO.v3_spp_608_COCO
+                        YOLO.v3_spp_416_COCO,
+                        YOLO.v4_416_COCO,
+                        YOLO.v7_416_COCO,
                         ][select]
     reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
 
@@ -93,10 +95,18 @@ function benchmark(;select = [1,3,4,5,6], reverseAfter::Bool = false, img = rand
         verbose && @info "Loading and running $modelname"
         table[i,:] = [modelname false "-" "-" "-" "-" "-"]
 
+        loaded = true
         t_load = @elapsed begin
-            mod = pretrained(;silent=true, kw...)
+            mod = try
+                pretrained(;silent=true, kw...)
+            catch ex
+                loaded = false
+                @warn "Failed to load $modelname: $ex"
+            end
         end
-        table[i, 2] = true
+        table[i, 2] = loaded
+        loaded || continue
+
         table[i, 3] = round(t_load, digits=3)
 
         batch = emptybatch(mod)

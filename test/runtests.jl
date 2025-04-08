@@ -1,12 +1,18 @@
-using ObjectDetector
-using Test, PrettyTables
-using FileIO, ImageCore
-using LazyArtifacts
-using ReferenceTests
 using CUDA
 using cuDNN
 using Darknet
+using FileIO
+using ImageCore
+using LazyArtifacts
+using PrettyTables
+using ReferenceTests
+using Suppressor
+using Test
 
-include("prepare_image.jl")
-include("maintests.jl")
-include("draw_boxes.jl")
+using ObjectDetector
+
+@testset "ObjectDetector" verbose=true begin
+    include("prepare_image.jl")
+    include("maintests.jl")
+    include("draw_boxes.jl")
+end
