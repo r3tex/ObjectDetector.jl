@@ -93,12 +93,34 @@ end
 ########################################################
 ##### FUNCTIONS NEEDED FOR THE YOLO CONSTRUCTOR ########
 ########################################################
+
+"""
+    softplus(x)
+
+The Softplus function is a smooth approximation of ReLU
+"""
+softplus(x) = log1p(exp(x))
+
 """
     leaky(x, a = oftype(x/1, 0.1))
 
 YOLO wants a leakyrelu with a fixed leakyness of 0.1 so we define our own
 """
 leaky(x, a = oftype(x/1, 0.1)) = max(a*x, x/1)
+
+"""
+    mish(x)
+
+Mish is a smooth, non-monotonic activation function proposed as an alternative to ReLU, Swish, and others.
+"""
+mish(x) = x * tanh(softplus(x))
+
+"""
+    swish(x)
+
+Swish is a smooth, non-monotonic activation function that has been shown to outperform ReLU in some deep learning tasks. It allows small negative values, which can improve gradient flow and generalization.
+"""
+swish(x) = x / (1 + exp(-x))
 
 """
     prettyprint(str, col)
@@ -144,7 +166,9 @@ end
 # Use this dict to translate the config activation names to function names
 const ACT = Dict(
     "leaky" => leaky,
-    "linear" => identity
+    "linear" => identity,
+    "mish" => mish,
+    "swish" => swish,
 )
 
 """
