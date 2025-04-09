@@ -396,6 +396,10 @@ mutable struct Yolo <: AbstractModel
             end
         end
 
+        if !eof(weightbytes)
+            error("Not all weights were read. Check that the weights file matches the cfg file.")
+        end
+
         # PART 2 - THE SKIPS
         ####################
         # Create test batch. Note that darknet is row-major, so width-first
