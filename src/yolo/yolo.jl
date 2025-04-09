@@ -256,7 +256,7 @@ _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
-_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
+_cat(arrays::AbstractArray...) = x -> cat(x, arrays...; dims=3)
 _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
