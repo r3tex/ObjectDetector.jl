@@ -76,9 +76,10 @@ function readweights(bytes::Union{IOBuffer, Nothing}, kern::Int, ch::Int, fl::In
 
     # Helper to read Float32 arrays safely from raw bytes
     function read_array(io::IOBuffer, n::Int)
-        data = read(io, n * sizeof(Float32))
-        if length(data) < n * sizeof(Float32) && eof(io)
-            error("Unexpectedly ran out of data in file. Check weights file corresponds to cfg file. Expected $(n * sizeof(Float32)) bytes, got $(length(data)).")
+        expected = n * sizeof(Float32)
+        data = read(io, expected)
+        if length(data) < expected && eof(io)
+            error("Unexpectedly ran out of data in file. Check weights file corresponds to cfg file. Expected $expected bytes, got $(length(data)).")
         end
         reinterpret(Float32, data)
     end
@@ -255,14 +256,7 @@ _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
-function _cat(arrays::AbstractArray...)
-    x -> try
-            cat(arrays...; dims=3)
-        catch
-            @error "Error concatenating arrays. All but 3rd dim should be the same." size.(arrays)
-            rethrow()
-        end
-end
+_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
