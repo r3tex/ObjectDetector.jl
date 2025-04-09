@@ -368,7 +368,7 @@ mutable struct Yolo <: AbstractModel
                 push!(ch, new_channels)
                 # Store the list of indices and a flag :cat for concatenation.
                 push!(fn, (indices, :cat))
-                !silent && prettyprint(["\n($cfg_idx) ","route($(join(layers,",")))"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($cfg_idx) ","route($(join(indices,",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + cfg_idx
