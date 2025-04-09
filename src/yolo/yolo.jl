@@ -86,6 +86,9 @@ function readweights(bytes::Union{IOBuffer, Nothing}, kern::Int, ch::Int, fl::In
         bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
         bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
         bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
+        if any(<(0), bv)
+            error("Negative variance in batchnorm layer — check your weights file or config")
+        end
         cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
 
         if dummy
