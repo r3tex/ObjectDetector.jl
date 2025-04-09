@@ -443,7 +443,10 @@ mutable struct Yolo <: AbstractModel
                         if length(fn[j]) == 3 && haskey(fn[j][3], :groups)
                             groups = fn[j][3][:groups]
                             group_id = fn[j][3][:group_id]
-                            fn[j] = _route(W[arrayidx][:, :, group_id*(size(W[arrayidx], 3) ÷ groups) + 1 : (group_id+1)*(size(W[arrayidx], 3) ÷ groups), :])
+                            group_size = size(W[arrayidx], 3) ÷ groups
+                            group_start = group_id * group_size + 1
+                            group_end = (group_id+1) * group_size
+                            fn[j] = _route(W[arrayidx][:, :,  group_start:group_end, :])
                         else
                             fn[j] = _route(W[arrayidx])
                         end
