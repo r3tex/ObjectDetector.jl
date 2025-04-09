@@ -390,11 +390,11 @@ mutable struct Yolo <: AbstractModel
             end
         end
 
-        # if !eof(weightbytes)
-        #     fsize = filesize(weightfile)
-        #     read_bytes = position(weightbytes)
-        #     error("Not all weights were read. Check that the weights file matches the cfg file. Read $(read_bytes) bytes. Filesize $(fsize) bytes.")
-        # end
+        if weightbytes !== nothing && !eof(weightbytes)
+            fsize = filesize(weightfile)
+            read_bytes = position(weightbytes)
+            error("Not all weights were read. Check that the weights file matches the cfg file. Read $(read_bytes) bytes. Filesize $(fsize) bytes.")
+        end
 
         # PART 2 - THE SKIPS
         ####################
