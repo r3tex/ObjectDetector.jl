@@ -255,7 +255,14 @@ _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
-_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
+function _cat(arrays::AbstractArray...)
+    x -> try
+            cat(arrays...; dims=3)
+        catch
+            @error "Error concatenating arrays. All but 3rd dim should be the same." size.(arrays)
+            rethrow()
+        end
+end
 _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
