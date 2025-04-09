@@ -241,7 +241,8 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
 end
 
 function maxpool(x; siz, stride)
-    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
+    pad = div(siz - 1, 2)  # symmetric padding to preserve size
+    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
 end
 
 _broadcast(act) = x -> act.(x)
