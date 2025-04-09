@@ -397,7 +397,16 @@ mutable struct Yolo <: AbstractModel
         # Create test batch. Note that darknet is row-major, so width-first
         test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x === nothing, fn) .- 1))
+        skip_idxs = Int[]
+        for (i, f) in enumerate(fn)
+            if f isa Tuple
+                push!(skip_idxs, f[1])
+            elseif f === nothing
+                push!(skip_idxs, i - 1)
+            end
+        end
+        needout = sort(unique(vcat(0, skip_idxs)))
+
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
@@ -406,10 +415,6 @@ mutable struct Yolo <: AbstractModel
         for i in 2:length(needout)
             !silent && print("$(i-1) ")
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
-            if fst > lst
-                # TODO: I'm not sure if this is right.. it just avoids issues when it's a negative range..
-                continue
-            end
             if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
