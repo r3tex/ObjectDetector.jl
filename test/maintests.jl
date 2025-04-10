@@ -40,7 +40,7 @@ img_d = Darknet.array_to_image(convert(Array{Float32}, channelview(img)))
 
 @testset "Check all models work in Darknet" begin
     @testset "$k" for (k, v) in YOLO.YOLO_MODELS
-        cfgfile, weightsfile = v
+        cfgfile, weightsfile = v()
         mktemp() do path, io
             results = try
                 redirect_stdio(;stderr=io, stdout=io) do
