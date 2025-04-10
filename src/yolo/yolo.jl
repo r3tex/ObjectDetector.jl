@@ -90,10 +90,10 @@ function readweights(bytes::Union{IOBuffer, Nothing}, kern::Int, ch::Int, fl::In
         bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
         bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
         bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
-        # if any(<(0), bv)
-        #     @show bb bw bm bv
-        #     error("Negative variance in batchnorm layer — check your weights file or config")
-        # end
+        if any(<(0), bv)
+            @show bb bw bm bv
+            error("Negative variance in batchnorm layer — check your weights file or config")
+        end
         cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
 
         if dummy
@@ -429,7 +429,6 @@ mutable struct Yolo <: AbstractModel
             end
             # generate the functions used by the skip-layers and reference the temporary outputs
             for j in fst:lst
-                @show fn[j]
                 if typeof(fn[j]) <: Tuple
                     skip_type = fn[j][2]
                     if skip_type == :route
