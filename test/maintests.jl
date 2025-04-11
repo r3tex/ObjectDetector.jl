@@ -31,10 +31,10 @@ pretrained_list = [
                     ]
 
 # Test all models first
-@testset "Test the state of all models" begin
+@testset "Pretrained models" begin
     header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "objects detected"]
     table = Array{Any}(undef, length(pretrained_list), 6)
-    @testset "Pretrained Model: $pretrained" for (k, pretrained) in pairs(pretrained_list)
+    @testset "$pretrained" for (k, pretrained) in pairs(pretrained_list)
         modelname = string(pretrained)
         table[k,:] .= [modelname, false, "-", "-", "-", "-"]
         loaded = true
