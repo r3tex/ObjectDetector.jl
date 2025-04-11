@@ -37,16 +37,4 @@ if !isdefined(Base, :get_extension)
     include("../ext/CUDAExt.jl")
 end
 
-@setup_workload begin
-    @compile_workload begin
-        # don't use GPU here because GPU compilation of Conv requires realistic weights not dummy weights
-        yolomod = YOLO.v3_COCO(dummy=true, silent=true, use_gpu=false)
-        batch = emptybatch(yolomod)
-        res = yolomod(batch)
-        res = nothing
-        batch = nothing
-        yolomod = nothing
-    end
-end
-
 end #module
