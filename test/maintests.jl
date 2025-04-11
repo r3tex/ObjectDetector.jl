@@ -62,6 +62,7 @@ buffer_output = true
             end
             @test size(results, 1) >= 2 # minimum, Most detect 3.
         end
+        GC.gc()
     end
 end
 
