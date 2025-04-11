@@ -15,57 +15,6 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
     @info "All artifacts downloaded"
 end
 
-# Test all models first
-header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "objects detected"]
-table = Array{Any}(undef, length(pretrained_list), 6)
-for (k, pretrained) in pairs(pretrained_list)
-    global table
-    modelname = string(pretrained)
-    table[k,:] .= [modelname, false, "-", "-", "-", "-"]
-    @testset "Pretrained Model: $modelname" begin
-        global table
-
-        t_load = @elapsed begin
-            yolomod = try
-                pretrained(silent=true)
-            catch ex
-                @error "Failed to load $modelname" ex=(ex, catch_backtrace())
-                table[k, 2] = false
-                continue
-            end
-        end
-        table[k, 2] = true
-        table[k, 3] = round(t_load, digits=3)
-        @info "$modelname: Loaded in $(round(t_load, digits=2)) seconds."
-
-        batch = emptybatch(yolomod)
-        for (j, imagename) in pairs(testimages)
-
-            @info """Testing image "$imagename" """
-            img = load(joinpath(@__DIR__,"images","$imagename.png"))
-            resultsdir = joinpath(@__DIR__,"results",imagename)
-            mkpath(resultsdir)
-            batch[:,:,:,1], padding = prepare_image(img, yolomod)
-
-            val, t_run, bytes, gctime, m = @timed res = yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh);
-            @test size(res,2) > 0
-            table[k, 4] = true
-            table[k, 5] = round(t_run, digits=4)
-            table[k, 6] = size(res, 2)
-            @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
-
-            resfile = joinpath(resultsdir,"$(modelname).png")
-            @test_reference resfile draw_boxes(img, yolomod, padding, res)
-            @info "$modelname: View result: $resfile"
-
-        end
-    end
-    GC.gc()
-end
-pretty_table(table, header = header)
-@info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
-
-
 testimages = ["dog-cycle-car_nonsquare","dog-cycle-car"]
 pretrained_list = [
                     YOLO.v2_tiny_416_COCO,
@@ -80,6 +29,66 @@ pretrained_list = [
                     YOLO.v7_tiny_416_COCO,
                     YOLO.v7_416_COCO,
                     ]
+
+# Test all models first
+@testset "Test the state of all models" begin
+    header = ["Model", "loaded?", "load time (s)", "ran?", "run time (s)", "objects detected"]
+    table = Array{Any}(undef, length(pretrained_list), 6)
+    @testset "Pretrained Model: $pretrained" for (k, pretrained) in pairs(pretrained_list)
+        modelname = string(pretrained)
+        table[k,:] .= [modelname, false, "-", "-", "-", "-"]
+        loaded = true
+        t_load = @elapsed begin
+            yolomod = try
+                pretrained(silent=true)
+            catch ex
+                loaded = false
+                @error "Failed to load $modelname" ex=(ex, catch_backtrace())
+                nothing
+            end
+        end
+        table[k, 2] = loaded
+        @test loaded
+        loaded || continue
+
+        table[k, 3] = round(t_load, digits=3)
+        @info "$modelname: Loaded in $(round(t_load, digits=2)) seconds."
+
+        batch = emptybatch(yolomod)
+        for (j, imagename) in pairs(testimages)
+
+            img = load(joinpath(@__DIR__,"images","$imagename.png"))
+            resultsdir = joinpath(@__DIR__,"results",imagename)
+            mkpath(resultsdir)
+            batch[:,:,:,1], padding = prepare_image(img, yolomod)
+
+            ran = true
+            val, t_run, bytes, gctime, m = @timed res = try
+                yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh);
+            catch ex
+                ran = false
+                @error "Failed to run $modelname" ex=(ex, catch_backtrace())
+                nothing
+            end
+            table[k, 4] = ran
+            @test ran
+            ran || continue
+
+            @test size(res,2) > 0
+            table[k, 5] = round(t_run, digits=4)
+            table[k, 6] = size(res, 2)
+            @info "$modelname: Ran in $(round(t_run, digits=2)) seconds. (bytes $bytes, gctime $gctime)"
+
+            resfile = joinpath(resultsdir,"$(modelname).png")
+            @test_reference resfile draw_boxes(img, yolomod, padding, res)
+            @info "$modelname: View result: $resfile"
+
+        end
+        GC.gc()
+    end
+    pretty_table(table, header = header)
+    @info "Times approximate. For more accurate benchmarking run ObjectDetector.benchmark()"
+end
 
 datadir = joinpath(pkgdir(Darknet), "data")
 metafile = joinpath(datadir, "coco.data")
