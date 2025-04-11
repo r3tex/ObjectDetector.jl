@@ -419,7 +419,7 @@ mutable struct Yolo <: AbstractModel
                 push!(skip_idxs, i - 1)
             end
         end
-        needout = sort(vcat(0, skip_idxs))
+        needout = sort(unique(vcat(0, skip_idxs)))
 
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
