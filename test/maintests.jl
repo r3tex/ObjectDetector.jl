@@ -26,7 +26,13 @@ for (k, pretrained) in pairs(pretrained_list)
         global table
 
         t_load = @elapsed begin
-            yolomod = pretrained(silent=true)
+            yolomod = try
+                pretrained(silent=true)
+            catch ex
+                @error "Failed to load $modelname" ex=(ex, catch_backtrace())
+                table[k, 2] = false
+                continue
+            end
         end
         table[k, 2] = true
         table[k, 3] = round(t_load, digits=3)
