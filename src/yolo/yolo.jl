@@ -375,11 +375,17 @@ mutable struct Yolo <: AbstractModel
                 # Store metadata in case we need it later during `_route`
                 if haskey(block, :groups)
                     push!(fn, (indices, :route, block))
+                    if !silent
+                        desc = "route($(indices[1]) (groups=$(block[:groups]), group_id=$(block[:group_id])))"
+                        prettyprint(["\n($(length(fn))) ",desc," => "],[:blue,:cyan,:green])
+                    end
+                    continue
                 elseif length(indices) > 1
                     push!(fn, (indices, :cat))
                 else
                     push!(fn, (indices[1], :route))
                 end
+                !silent && prettyprint(["\n($(length(fn))) ","route($(join(indices, ",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + cfg_idx
@@ -434,7 +440,7 @@ mutable struct Yolo <: AbstractModel
         for i in 2:length(needout)
             !silent && print("$(i-1) ")
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
-            if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
+            if fn[fst] === nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
             end
