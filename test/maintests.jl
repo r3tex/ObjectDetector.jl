@@ -38,7 +38,7 @@ names = collect(eachline(namesfile))
 meta = Darknet.get_metadata(metafile)
 img = load(joinpath(@__DIR__, "images", "dog-cycle-car.png"))
 img_d = Darknet.array_to_image(convert(Array{Float32}, channelview(img)))
-buffer_output = !Sys.iswindows() # windows seems to oom or something and we don't get the output
+buffer_output = true
 @testset "Check all models work in Darknet" begin
     @testset "$k" for (k, v) in YOLO.YOLO_MODELS
         cfgfile, weightsfile = v()
