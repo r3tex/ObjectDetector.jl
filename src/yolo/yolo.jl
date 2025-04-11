@@ -363,12 +363,18 @@ mutable struct Yolo <: AbstractModel
             elseif blocktype == :route
                 layers = block[:layers]
                 indices = map(l -> l < 0 ? (cfg_idx + l) : l + 1, layers)
-                # The new channel count is the sum of channels from each indicated layer.
-                new_channels = sum(ch[i] for i in indices)
-                push!(ch, new_channels)
-                # Store the list of indices and a flag :cat for concatenation.
-                push!(fn, (indices, :cat))
-                !silent && prettyprint(["\n($cfg_idx) ","route($(join(indices,",")))"," => "],[:blue,:cyan,:green])
+
+                if haskey(block, :groups) && haskey(block, :group_id)
+                    @assert length(indices) == 1 "Grouped route only makes sense with a single input layer"
+                    channels = ch[indices[1]] ÷ block[:groups]
+                else
+                    channels = sum(ch[i] for i in indices)
+                end
+                push!(ch, channels)
+
+                # Store metadata in case we need it later during `_route`
+                extrameta = haskey(block, :groups) ? Dict(:groups => block[:groups], :group_id => block[:group_id]) : nothing
+                push!(fn, extrameta === nothing ? (indices, :cat) : (indices, :cat, extrameta))
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + cfg_idx
