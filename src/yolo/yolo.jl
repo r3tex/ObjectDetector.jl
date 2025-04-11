@@ -256,7 +256,7 @@ _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
-_cat(arrays::AbstractArray...) = x -> cat(x, arrays...; dims=3)
+_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
@@ -373,8 +373,13 @@ mutable struct Yolo <: AbstractModel
                 push!(ch, channels)
 
                 # Store metadata in case we need it later during `_route`
-                extrameta = haskey(block, :groups) ? Dict(:groups => block[:groups], :group_id => block[:group_id]) : nothing
-                push!(fn, extrameta === nothing ? (indices, :cat) : (indices, :cat, extrameta))
+                if haskey(block, :groups)
+                    push!(fn, (indices, :route, block))
+                elseif length(indices) > 1
+                    push!(fn, (indices, :cat))
+                else
+                    push!(fn, (indices[1], :route))
+                end
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
                 idx = block[:from] + cfg_idx
