@@ -71,20 +71,51 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer, Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
     dummy = isnothing(bytes)
+
+    # Helper to read Float32 arrays safely from raw bytes
+    function read_array(io::IOBuffer, n::Int)
+        expected = n * sizeof(Float32)
+        data = read(io, expected)
+        if length(data) < expected && eof(io)
+            error("Unexpectedly ran out of data in file. Check weights file corresponds to cfg file. Expected $expected bytes, got $(length(data)).")
+        end
+        reinterpret(Float32, data)
+    end
+
+    # Read batch norm params or fill with dummy ones
     if bn
-        bb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bw = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bm = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bv = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cb = zeros(Float32, fl)
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
+        bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
+        bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
+        if any(<(0), bv)
+            @show bb bw bm bv
+            error("Negative variance in batchnorm layer — check your weights file or config")
+        end
+        cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
+
+        if dummy
+            cw = ones(Float32, kern, kern, ch, fl)
+        else
+            raw = read_array(bytes, kern * kern * ch * fl)
+            cw = reshape(raw, kern, kern, ch, fl)
+        end
+
         cw = Float32.(flip(cw))
         return cw, cb, bb, bw, bm, bv
+
     else
-        cb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cb = dummy ? ones(Float32, fl) : read_array(bytes, fl)
+
+        if dummy
+            cw = ones(Float32, kern, kern, ch, fl)
+        else
+            raw = read_array(bytes, kern * kern * ch * fl)
+            cw = reshape(raw, kern, kern, ch, fl)
+        end
+
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
@@ -93,12 +124,41 @@ end
 ########################################################
 ##### FUNCTIONS NEEDED FOR THE YOLO CONSTRUCTOR ########
 ########################################################
+
+"""
+    softplus(x)
+
+The Softplus function is a smooth approximation of ReLU
+"""
+softplus(x) = log1p(exp(x))
+
 """
     leaky(x, a = oftype(x/1, 0.1))
 
 YOLO wants a leakyrelu with a fixed leakyness of 0.1 so we define our own
 """
 leaky(x, a = oftype(x/1, 0.1)) = max(a*x, x/1)
+
+"""
+    logistic(x)
+
+Another name for sigmoid (σ).
+"""
+logistic(x) = σ(x)
+
+"""
+    mish(x)
+
+Mish is a smooth, non-monotonic activation function proposed as an alternative to ReLU, Swish, and others.
+"""
+mish(x) = x * tanh(softplus(x))
+
+"""
+    swish(x)
+
+Swish is a smooth, non-monotonic activation function that has been shown to outperform ReLU in some deep learning tasks. It allows small negative values, which can improve gradient flow and generalization.
+"""
+swish(x) = x / (1 + exp(-x))
 
 """
     prettyprint(str, col)
@@ -144,7 +204,10 @@ end
 # Use this dict to translate the config activation names to function names
 const ACT = Dict(
     "leaky" => leaky,
-    "linear" => identity
+    "linear" => identity,
+    "logistic" => logistic,
+    "mish" => mish,
+    "swish" => swish,
 )
 
 """
@@ -184,7 +247,8 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
 end
 
 function maxpool(x; siz, stride)
-    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
+    pad = div(siz - 1, 2)  # symmetric padding to preserve size
+    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
 end
 
 _broadcast(act) = x -> act.(x)
@@ -192,7 +256,7 @@ _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _add(val) = x -> x + val
-_cat(val) = x -> cat(x, val, dims = 3)
+_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 _maxpool(siz, stride) = x -> maxpool(x; siz, stride)
 
 ########################################################
@@ -232,8 +296,8 @@ mutable struct Yolo <: AbstractModel
         assertdimconform(cfgvec)
 
         cfg = cfgvec[1][2]
-        yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
-        cfg[:yoloversion] = yoloversion
+        cfg[:cfgname] = basename(cfgfile)
+        cfg[:laststage] = any(first.(cfgvec) .== :region) ? :region : :yolo
         weightbytes = if dummy
             nothing # readweights knows to make up dummy weights if this is nothing
         else
@@ -252,9 +316,11 @@ mutable struct Yolo <: AbstractModel
 
         # PART 1 - THE LAYERS
         #####################
+        cfg_idx = 0
         ch = [cfg[:channels]] # this keeps track of channels per layer for creating convolutions
         fn = Array{Any, 1}(nothing, 0) # this keeps the 'function' generated by every layer
         for (blocktype, block) in cfgvec[2:end]
+            cfg_idx += 1
             if blocktype == :convolutional
                 stack   = []
                 kern    = block[:size]
@@ -263,64 +329,88 @@ mutable struct Yolo <: AbstractModel
                 stride  = block[:stride]
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
-                cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
+                cw, cb, bb, bw, bm, bv = try
+                    readweights(weightbytes, kern, ch[end], filters, bn)
+                catch
+                    !silent && println()
+                    @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
+                    rethrow()
+                end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
-                !silent && prettyprint(["($(length(fn))) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
+                !silent && prettyprint(["($cfg_idx) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
                 ch = ch[1] == cfg[:channels] ? ch[2:end] : ch # remove first channel after use
             elseif blocktype == :upsample
                 stride = block[:stride]
                 push!(fn, _upsample(stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","upsample($stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($cfg_idx) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :reorg
                 stride = block[:stride]
                 push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","reorg($stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($cfg_idx) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype == :maxpool
                 siz = block[:size]
                 stride = block[:stride]
                 push!(fn, _maxpool(siz, stride))
                 push!(ch, ch[end])
-                !silent && prettyprint(["($(length(fn))) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
+                !silent && prettyprint(["($cfg_idx) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
             elseif blocktype == :route
-                idx1 = length(fn) + block[:layers][1] + 1
-                if length(block[:layers]) > 1
-                    if block[:layers][2] > 0
-                        idx2 = block[:layers][2] + 1
-                    else
-                        idx2 = length(fn) + block[:layers][2] + 1 # Handle -ve route selections
-                    end
-                    push!(ch, ch[idx1] + ch[idx2])
-                    push!(fn, (idx2, :cat)) # cat two layers along the channel dim
+                layers = block[:layers]
+                indices = map(l -> l < 0 ? (cfg_idx + l) : l + 1, layers)
+
+                if haskey(block, :groups) && haskey(block, :group_id)
+                    @assert length(indices) == 1 "Grouped route only makes sense with a single input layer"
+                    channels = ch[indices[1]] ÷ block[:groups]
                 else
-                    idx2 = ""
-                    push!(ch, ch[idx1])
-                    push!(fn, (idx1, :route)) # pull a whole layer from a few steps back
+                    channels = sum(ch[i] for i in indices)
                 end
-                !silent && prettyprint(["\n($(length(fn))) ","route($idx1,$idx2)"," => "],[:blue,:cyan,:green])
+                push!(ch, channels)
+
+                # Store metadata in case we need it later during `_route`
+                if haskey(block, :groups)
+                    push!(fn, (indices, :route, block))
+                    if !silent
+                        desc = "route($(indices[1]) (groups=$(block[:groups]), group_id=$(block[:group_id])))"
+                        prettyprint(["\n($(length(fn))) ",desc," => "],[:blue,:cyan,:green])
+                    end
+                    continue
+                elseif length(indices) > 1
+                    push!(fn, (indices, :cat))
+                else
+                    push!(fn, (indices[1], :route))
+                end
+                !silent && prettyprint(["\n($(length(fn))) ","route($(join(indices, ",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype == :shortcut
                 act = ACT[block[:activation]]
-                idx = block[:from] + length(fn)+1
+                idx = block[:from] + cfg_idx
                 push!(fn, (idx, :add)) # take two layers with equal num of channels and adds their values
                 push!(ch, ch[end])
-                !silent && prettyprint(["\n($(length(fn))) ","shortcut($idx,$(length(fn)-1))"," => "],[:blue,:cyan,:green])
+                !silent && prettyprint(["\n($cfg_idx) ","shortcut($idx,$cfg_idx)"," => "],[:blue,:cyan,:green])
             elseif blocktype == :yolo
                 push!(fn, nothing) # not a real layer. used for bounding boxes etc...
                 push!(ch, ch[end])
                 push!(cfg[:output], block)
-                !silent && prettyprint(["($(length(fn))) ","YOLO"," || "],[:blue,:yellow,:green])
+                !silent && prettyprint(["($cfg_idx) ","YOLO"," || "],[:blue,:yellow,:green])
             elseif blocktype == :region
                 push!(fn, nothing) # not a real layer. used for bounding boxes etc...
                 push!(ch, ch[end])
                 push!(cfg[:output], block)
-                !silent && prettyprint(["($(length(fn))) ","region"," || "],[:blue,:yellow,:green])
+                !silent && prettyprint(["($cfg_idx) ","region"," || "],[:blue,:yellow,:green])
+            else
+                error("Unknown layer type $blocktype")
             end
+        end
+
+        if weightbytes !== nothing && !eof(weightbytes)
+            fsize = filesize(weightfile)
+            read_bytes = position(weightbytes)
+            error("Not all weights were read. Check that the weights file matches the cfg file. Read $(read_bytes) bytes. Filesize $(fsize) bytes.")
         end
 
         # PART 2 - THE SKIPS
@@ -328,7 +418,20 @@ mutable struct Yolo <: AbstractModel
         # Create test batch. Note that darknet is row-major, so width-first
         test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
+        skip_idxs = Int[]
+        for (i, f) in enumerate(fn)
+            if f isa Tuple
+                if f[1] isa AbstractVector
+                    append!(skip_idxs, f[1])
+                else
+                    push!(skip_idxs, f[1])
+                end
+            elseif f === nothing
+                push!(skip_idxs, i - 1)
+            end
+        end
+        needout = sort(unique(vcat(0, skip_idxs)))
+
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
@@ -337,21 +440,32 @@ mutable struct Yolo <: AbstractModel
         for i in 2:length(needout)
             !silent && print("$(i-1) ")
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
-            if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
+            if fn[fst] === nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
             end
             # generate the functions used by the skip-layers and reference the temporary outputs
             for j in fst:lst
                 if typeof(fn[j]) <: Tuple
-                    arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
                     if skip_type == :route
-                        fn[j] = _route(identity(W[arrayidx]))
+                        arrayidx = layer2out[fn[j][1]]
+                        if length(fn[j]) == 3 && haskey(fn[j][3], :groups)
+                            groups = fn[j][3][:groups]
+                            group_id = fn[j][3][:group_id]
+                            group_size = size(W[arrayidx], 3) ÷ groups
+                            group_start = group_id * group_size + 1
+                            group_end = (group_id+1) * group_size
+                            fn[j] = _route(W[arrayidx][:, :,  group_start:group_end, :])
+                        else
+                            fn[j] = _route(W[arrayidx])
+                        end
                     elseif skip_type == :add
-                        fn[j] =  _add(W[arrayidx])
+                        arrayidx = layer2out[fn[j][1]]
+                        fn[j] = _add(W[arrayidx])
                     elseif skip_type == :cat
-                        fn[j] = _cat(W[arrayidx])
+                        indices = fn[j][1]
+                        fn[j] = _cat([W[layer2out[i]] for i in indices]...)
                     else
                         error("Unknown skip layer $skip_type")
                     end
@@ -445,7 +559,7 @@ get_input_size(model::Yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], 
 function Base.show(io::IO, yolo::Yolo)
     detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
     overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
-    ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
+    ln1 = "$(yolo.cfg[:cfgname]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
     ln3 = "gridsize: $(yolo.cfg[:gridsize][1])x$(yolo.cfg[:gridsize][2])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
@@ -553,7 +667,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
                 # Convert to image width & height scale (0.0-1.0)
                 weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
                 weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
-                if yolo.cfg[:yoloversion] == 2
+                if yolo.cfg[:laststage] == :region # indicates yolov2
                     weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
                     weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
                 else
