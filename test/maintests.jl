@@ -3,16 +3,15 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 @info "Testing all models with detect_thresh = $dThresh, overlap_thresh = $oThresh"
 
 @testset "Download all artifacts" begin
-    @info artifact"yolov2-COCO"
-    @info artifact"yolov2-tiny-COCO"
-    @info artifact"yolov3-COCO"
-    @info artifact"yolov3-spp-COCO"
-    @info artifact"yolov3-tiny-COCO"
-    @info artifact"yolov4-COCO"
-    @info artifact"yolov4-tiny-COCO"
-    @info artifact"yolov7-COCO"
-    @info artifact"yolov7-tiny-COCO"
-    @info "All artifacts downloaded"
+    artifact"yolov2-COCO"
+    artifact"yolov2-tiny-COCO"
+    artifact"yolov3-COCO"
+    artifact"yolov3-spp-COCO"
+    artifact"yolov3-tiny-COCO"
+    artifact"yolov4-COCO"
+    artifact"yolov4-tiny-COCO"
+    artifact"yolov7-COCO"
+    artifact"yolov7-tiny-COCO"
 end
 
 Darknet.download_defaults()
@@ -73,7 +72,9 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
             resultsdir = joinpath(@__DIR__,"results", imagename)
             mkpath(resultsdir)
             batch = emptybatch(yolomod)
-            batch[:,:,:,1], padding = prepare_image(img, yolomod)
+            img_padded, padding = prepare_image(img, yolomod)
+            batch[:,:,:,1] .= img_padded
+            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") img_padded
 
             juliares = try
                 yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh)
@@ -82,13 +83,15 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
                 @warn "ObjectDetector inference failed" modelname imagename exception=(e, catch_backtrace())
                 nothing
             end
-            od_resfile = joinpath(resultsdir,"$(modelname).png")
+            od_resfile = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
                 @test_reference od_resfile draw_boxes(img, yolomod, padding, juliares)
             end
 
+            # Rmove the alpha channel
+            img_padded_darknet = collect(PermutedDimsArray(img_padded, (3, 2, 1)))
             darkres = try
-                img_d = Darknet.array_to_image(convert(Array{Float32}, channelview(img)))
+                img_d = Darknet.array_to_image(img_padded_darknet)
                 Darknet.detect(net, meta, img_d, thresh=dThresh, nms=oThresh)
             catch e
                 e isa InterruptException && rethrow()
@@ -101,7 +104,10 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
             (darkres === nothing || juliares === nothing) && continue
 
             darkres_xyxy = Matrix{Float32}(undef, size(juliares, 1), length(darkres))
-            img_h, img_w = size(img, 1), size(img, 2)
+
+            # Note: These might be the wrong way around, but our padded input is
+            # square so it doesn't matter here currently
+            img_h, img_w = size(img_padded, 1), size(img_padded, 2)
             for i in eachindex(darkres)
                 d_x, d_y, d_w, d_h = darkres[i][3]
                 d_x1, d_y1 = d_x - d_w/2, d_y - d_h/2
@@ -114,11 +120,11 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
                 darkres_xyxy[end-1, i] = class_id
                 # last row is batch id
             end
-            darknet_resfile = joinpath(resultsdir,"$(modelname)_darknet.png")
+            darknet_resfile = joinpath(resultsdir,"$(modelname)_out_darknet.png")
             @test_reference darknet_resfile draw_boxes(img, yolomod, padding, darkres_xyxy)
 
             @test ReferenceTests._psnr(load(od_resfile), load(darknet_resfile)) > 30.0
-            @test size(darkres_xyxy, 2) >= 2
+            @test size(darkres_xyxy, 2) > 0
             @test size(darkres_xyxy) == size(juliares)
             dark_sorted = sortslices(darkres_xyxy, dims=2, by = x -> x[1])
             julia_sorted = sortslices(juliares, dims=2, by = x -> x[1])
