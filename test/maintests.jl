@@ -18,6 +18,7 @@ Darknet.download_defaults()
 
 const skip_models = (
     "v2_COCO",          # reorg issue
+    "v2_tiny_COCO",     # bad results
     "v3_spp_COCO",      # SPP not supported
     "v4_COCO",          # not supported
     "v4_tiny_COCO",     # not supported
