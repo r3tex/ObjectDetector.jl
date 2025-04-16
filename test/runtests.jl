@@ -4,6 +4,7 @@ using Darknet
 using FileIO
 using ImageCore
 using LazyArtifacts
+using OrderedCollections: OrderedDict
 using PrettyTables
 using ReferenceTests
 using Suppressor
