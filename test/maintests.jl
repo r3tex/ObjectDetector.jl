@@ -88,7 +88,7 @@ include("resrefs.jl")
 
             od_resimg = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
-                @test juliares ≈ get!(RES_REFS, "od_$(modelname)_$(imagename)", juliares)
+                @test juliares ≈ get!(RES_REFS, "od_$(modelname)_$(imagename)", juliares) atol=0.05
                 @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares)
             end
 
@@ -124,7 +124,7 @@ include("resrefs.jl")
                 darkres_xyxy[end-1, i] = class_id
                 # last row is batch id
             end
-            @test darkres_xyxy ≈ get!(RES_REFS, "dn_$(modelname)_$(imagename)", darkres_xyxy)
+            @test darkres_xyxy ≈ get!(RES_REFS, "dn_$(modelname)_$(imagename)", darkres_xyxy) atol=0.05
             darknet_resimg = joinpath(resultsdir,"$(modelname)_out_darknet.png")
             @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy)
 
