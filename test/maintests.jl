@@ -151,7 +151,7 @@ include("resrefs.jl")
     end
 end
 
-# println(repr(RES_REFS))
+# println(repr(sort!(RES_REFS)))
 
 @testset "batch sizes" begin
     img = load(joinpath(@__DIR__, "images", "$(testimages[1]).png"))

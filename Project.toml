@@ -54,10 +54,11 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Darknet = "e2912957-7d06-5673-a7d6-96d153624877"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 ReferenceTests = "324d217c-45ce-50fc-942e-d289b448e8cf"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [targets]
-test = ["CUDA", "cuDNN", "Darknet", "FileIO", "ImageIO", "ReferenceTests", "Test", "Suppressor"]
+test = ["CUDA", "cuDNN", "Darknet", "FileIO", "ImageIO", "OrderedCollections", "ReferenceTests", "Test", "Suppressor"]
