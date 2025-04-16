@@ -32,7 +32,8 @@ const names = collect(eachline(namesfile))
 const datadir = joinpath(pkgdir(Darknet), "data")
 const metafile = joinpath(datadir, "coco.data")
 const meta = Darknet.get_metadata(metafile)
-const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
+
+include("resrefs.jl")
 
 @testset "Darknet vs ObjectDetector" begin
     @testset "$modelname" for (modelname, files) in sort(collect(YOLO.YOLO_MODELS), by = first)
@@ -84,9 +85,11 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
                 @warn "ObjectDetector inference failed" modelname imagename exception=(e, catch_backtrace())
                 nothing
             end
-            od_resfile = joinpath(resultsdir,"$(modelname)_out_od.png")
+
+            od_resimg = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
-                @test_reference od_resfile draw_boxes(img, yolomod, padding, juliares)
+                @test juliares ≈ get!(RES_REFS, "od_$(modelname)_$(imagename)", juliares)
+                @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares)
             end
 
             # Rmove the alpha channel
@@ -104,7 +107,7 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
             @test juliares !== nothing
             (darkres === nothing || juliares === nothing) && continue
 
-            darkres_xyxy = Matrix{Float32}(undef, size(juliares, 1), length(darkres))
+            darkres_xyxy = zeros(Float32, size(juliares, 1), length(darkres))
 
             # Note: These might be the wrong way around, but our padded input is
             # square so it doesn't matter here currently
@@ -121,10 +124,11 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
                 darkres_xyxy[end-1, i] = class_id
                 # last row is batch id
             end
-            darknet_resfile = joinpath(resultsdir,"$(modelname)_out_darknet.png")
-            @test_reference darknet_resfile draw_boxes(img, yolomod, padding, darkres_xyxy)
+            @test darkres_xyxy ≈ get!(RES_REFS, "dn_$(modelname)_$(imagename)", darkres_xyxy)
+            darknet_resimg = joinpath(resultsdir,"$(modelname)_out_darknet.png")
+            @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy)
 
-            @test ReferenceTests._psnr(load(od_resfile), load(darknet_resfile)) > 30.0
+            @test ReferenceTests._psnr(load(od_resimg), load(darknet_resimg)) > 30.0
             @test size(darkres_xyxy, 2) > 0
             @test size(darkres_xyxy) == size(juliares)
             dark_sorted = sortslices(darkres_xyxy, dims=2, by = x -> x[1])
@@ -145,6 +149,8 @@ const numerical_compare = Base.get_bool_env("OD_NUMERICAL_COMPARE", false)
         GC.gc()
     end
 end
+
+# println(repr(RES_REFS))
 
 @testset "batch sizes" begin
     img = load(joinpath(@__DIR__, "images", "$(testimages[1]).png"))
