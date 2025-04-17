@@ -17,8 +17,8 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false) where
     b1h = b1y2 - b1y1
     b1area = b1w * b1h
 
-    b1cx = distance ? (b1x1 + b1x2) / 2 : zero(eltype(out))
-    b1cy = distance ? (b1y1 + b1y2) / 2 : zero(eltype(out))
+    b1cx = distance ? (b1x1 + b1x2) / 2 : zero(T)
+    b1cy = distance ? (b1y1 + b1y2) / 2 : zero(T)
 
     @inbounds for i in eachindex(out)
         b2x1 = box2[1, i]
@@ -48,7 +48,7 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false) where
             enc_y1 = min(b1y1, b2y1)
             enc_x2 = max(b1x2, b2x2)
             enc_y2 = max(b1y2, b2y2)
-            c2 = (enc_x2 - enc_x1)^2 + (enc_y2 - enc_y1)^2 + eps(eltype(out))
+            c2 = (enc_x2 - enc_x1)^2 + (enc_y2 - enc_y1)^2 + eps(T)
 
             out[i] = iou - center_dist_sq / c2
         else
