@@ -76,7 +76,7 @@ include("resrefs.jl")
             batch = emptybatch(yolomod)
             img_padded, padding = prepare_image(img, yolomod)
             batch[:,:,:,1] .= img_padded
-            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") img_padded
+            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded)
 
             juliares = try
                 yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh)

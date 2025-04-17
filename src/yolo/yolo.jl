@@ -6,7 +6,7 @@ import ..to, ..AbstractModel, ..get_input_size, ..wrap_model, ..uses_gpu, ..get_
 models_dir() = joinpath(@__DIR__, "models")
 
 import Flux
-import Flux: gpu, σ
+import Flux: gpu, cpu, σ
 using LazyArtifacts
 using TimerOutputs
 using AllocArrays: AllocArray, BumperAllocator
@@ -613,7 +613,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
 
             # PROCESSING ALL PREDICTIONS
             ############################
-            @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
+            @timeit to "filter detections" batchout = cpu(keepdetections(cat(outweights..., dims=2)))
 
             if size(batchout, 2) < 2
                 ret = batchout # empty or singular output doesn't need further filtering
