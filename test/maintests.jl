@@ -47,7 +47,7 @@ include("resrefs.jl")
         yolomod, net = nothing, nothing
         @testset "Load in ObjectDetector.jl" begin
             yolomod = try
-                YOLO.yolo_model(modelname; use_gpu=false, silent=true)
+                YOLO.yolo_model(modelname; silent=true)
             catch e
                 e isa InterruptException && rethrow()
                 @warn "Failed to load model in ObjectDetector.jl" modelname exception=e
