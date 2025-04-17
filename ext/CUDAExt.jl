@@ -51,15 +51,19 @@ function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) 
     return
 end
 
-function maxpool(x::CuArray; siz = 2, stride = 1, kernel = 2)
-    if stride == 1 && cu_functional()
-        #Asymmetric padding not supported by CuDNN
-        x = cat(x, x[:, end:end, :, :], dims = 2)
-        x = cat(x, x[end:end, :, :, :], dims = 1)
-        pdims = Flux.PoolDims(x, (kernel, kernel); stride = 1)
-        return Flux.maxpool(x, pdims)
+function maxpool(x::CuArray; siz=2, stride=1, pad)
+    if siz == 2 && stride == 1 && pad == (0, 1, 0, 1)
+        # cuDNN doesn't support asymmetric padding
+        xp = CUDA.zeros(Float32, size(x,1)+1, size(x,2)+1, size(x,3), size(x,4))
+        xp[1:size(x,1), 1:size(x,2), :, :] .= x
+        xp[end, :, :, :] .= xp[end-1, :, :, :] # replicate last row
+        xp[:, end, :, :] .= xp[:, end-1, :, :] # replicate last column
+        pdims = Flux.PoolDims(xp, (siz, siz); stride=(stride, stride), padding=(0, 0, 0, 0)) # Use padding=0
+        return Flux.maxpool(xp, pdims)
     else
-        Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = (0,2-stride,0,2-stride)))
+        # For all other cases (symmetric padding or stride != 1), padding is handled directly by Flux.PoolDims
+        pdims = Flux.PoolDims(x, (siz, siz); stride=(stride, stride), padding=pad)
+        return Flux.maxpool(x, pdims)
     end
 end
 
