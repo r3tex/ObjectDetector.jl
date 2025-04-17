@@ -2,7 +2,6 @@ module YOLO
 export get_input_size
 
 import ..to, ..AbstractModel, ..get_input_size, ..wrap_model, ..uses_gpu, ..get_cfg
-#import ..getArtifact #disabled due to https://github.com/JuliaLang/Pkg.jl/issues/1579
 
 models_dir() = joinpath(@__DIR__, "models")
 
@@ -71,20 +70,39 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool; old_darknet::Bool=false)
+    function read_array(io::IOBuffer, n::Int)
+        expected = n * sizeof(Float32)
+        data = read(io, expected)
+        if length(data) < expected && eof(io)
+            error("Unexpectedly ran out of data in file. Check weights file corresponds to cfg file. Expected $expected bytes, got $(length(data)).")
+        end
+        Vector(reinterpret(Float32, data))
+    end
     dummy = isnothing(bytes)
     if bn
-        bb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bw = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bm = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        bv = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cb = zeros(Float32, fl)
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        if old_darknet
+            # PJReddie Darknet: scales, biases, means, vars
+            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
+            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        else
+            # AlexeyAB fork: biases, scales, means, vars
+            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
+        end
+        bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
+        bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
+        cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
+        if any(<(0), bv)
+            @warn "Clipping negative BN variances. This could indicate an issue with the weights file/cfgfile" count_negative = count(<(0), bv)  minval = minimum(bv)
+            bv = clamp.(bv, 0.0f0, Inf32)
+        end
         return cw, cb, bb, bw, bm, bv
     else
-        cb = dummy ? ones(Float32, fl) : reinterpret(Float32, read(bytes, fl*4))
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read(bytes, kern*kern*ch*fl*4)), kern, kern, ch, fl)
+        cb = dummy ? ones(Float32, fl) : read_array(bytes, fl)
+        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
@@ -226,14 +244,14 @@ mutable struct Yolo <: AbstractModel
         cfgvec = cfgread(cfgfile)
 
         # make and requested changes before loading
-        cfgchanges != nothing && overridecfg!(cfgvec, cfgchanges, silent=silent)
+        cfgchanges !== nothing && overridecfg!(cfgvec, cfgchanges, silent=silent)
 
         # check that chosen width and height of model conform with first conv layer
         assertdimconform(cfgvec)
 
         cfg = cfgvec[1][2]
-        yoloversion = any(first.(cfgvec) .== :region) ? 2 : 3 #v2 calls the last stage "region", v3 uses "yolo"
-        cfg[:yoloversion] = yoloversion
+        cfg[:cfgname] = basename(cfgfile)
+        cfg[:laststage] = any(cfg -> first(cfg) === :region, cfgvec) ? :region : :yolo
         weightbytes = if dummy
             nothing # readweights knows to make up dummy weights if this is nothing
         else
@@ -241,12 +259,19 @@ mutable struct Yolo <: AbstractModel
         end
         # these settings are populated as the network is constructed below
         # some settings are re-read later for the last part of construction
-        maj, min, subv, im1, im2 = if dummy
-            ones(Int32, 5)
+        maj, min, subv = if dummy
+            ones(Int32, 3)
         else
-            reinterpret(Int32, read(weightbytes, 4*5))
+            reinterpret(Int32, read(weightbytes, 4*3))
         end
-        cfg[:darknetversion] = VersionNumber("$maj.$min.$subv")
+        cfg[:darknetversion] = VersionNumber(maj, min, subv)
+        old_darknet = cfg[:darknetversion] < v"0.2.0"
+        # In AlexeyAB, seen was split into seen and seen_images for more training info tracking
+        seen, seen_images = if old_darknet
+            reinterpret(Int32, read(weightbytes, 4*1)), 0
+        else
+            reinterpret(Int32, read(weightbytes, 4*2))
+        end
         cfg[:batchsize] = batchsize
         cfg[:output] = []
 
@@ -263,7 +288,13 @@ mutable struct Yolo <: AbstractModel
                 stride  = block[:stride]
                 act     = ACT[block[:activation]]
                 bn      = haskey(block, :batch_normalize)
-                cw, cb, bb, bw, bm, bv = readweights(weightbytes, kern, ch[end], filters, bn)
+                cw, cb, bb, bw, bm, bv = try
+                    readweights(weightbytes, kern, ch[end], filters, bn; old_darknet)
+                catch
+                    !silent && println()
+                    @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
+                    rethrow()
+                end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
@@ -328,21 +359,23 @@ mutable struct Yolo <: AbstractModel
         # Create test batch. Note that darknet is row-major, so width-first
         test_batches = [maybe_gpu(rand(Float32, cfg[:width], cfg[:height], cfg[:channels], batchsize))]
         # find all skip-layers and all YOLO layers
-        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x == nothing, fn) .- 1))
+        needout = sort(vcat(0, [l[1] for l in filter(f -> typeof(f) <: Tuple, fn)], findall(x -> x === nothing, fn) .- 1))
         chainstack = Flux.Chain[] # layers that just feed forward can be grouped together in chains
         layer2out = Dict() # this dict translates layer numbers to chain numbers
         W = Dict{Int64, typeof(test_batches[1])}() # this holds temporary outputs for use by skip-layers and YOLO output
         out = Array{Dict{Symbol, Any}, 1}(undef, 0) # store values needed for interpreting YOLO output
         !silent && println("\n\nGenerating chains and outputs: ")
-        for i in 2:length(needout)
-            !silent && print("$(i-1) ")
+        for i in eachindex(needout)[2:end]
+            !silent && print(rpad(string(i-1), 4))
             fst, lst = needout[i-1]+1, needout[i] # these layers feed forward to an output
-            if typeof(fn[fst]) == Nothing # check if sequence of layers begin with YOLO output
+            if fn[fst] === nothing # check if sequence of layers begin with YOLO output
                 push!(out, Dict(:idx => layer2out[fst-1]))
                 fst += 1
             end
             # generate the functions used by the skip-layers and reference the temporary outputs
-            for j in fst:lst
+            range = fst:lst
+            !silent && print(rpad(string(range), 8))
+            for j in range
                 if typeof(fn[j]) <: Tuple
                     arrayidx = layer2out[fn[j][1]]
                     skip_type = fn[j][2]
@@ -357,12 +390,15 @@ mutable struct Yolo <: AbstractModel
                     end
                 end
             end
-            push!(chainstack, Flux.Chain(fn[fst:lst]...)) # add sequence of functions to a chain
-            push!(test_batches, chainstack[end](test_batches[end])) # run the previous test image
-            push!(W, i-1 => copy(test_batches[end])) # generate a temporary array for the output of the chain
-            push!(layer2out, [l => i-1 for l in fst:lst]...)
+            push!(chainstack, Flux.Chain(fn[range]...)) # add sequence of functions to a chain
+
+            outvar = chainstack[end](test_batches[end]) # run the new chain on the previous output
+            !silent && println("Output: ", size(outvar))
+            push!(test_batches, outvar)
+            push!(W, i-1 => copy(outvar)) # generate a temporary array for the output of the chain
+            push!(layer2out, [l => i-1 for l in range]...)
         end
-        !silent && print("\n\n")
+        !silent && println()
         matrix_sizes_x = [size(v, 1) for (k,v) in W]
         matrix_sizes_y = [size(v, 2) for (k,v) in W]
         cfg[:gridsize] = (minimum(matrix_sizes_x), minimum(matrix_sizes_y)) # the gridsize is determined by the smallest matrix
@@ -386,37 +422,32 @@ mutable struct Yolo <: AbstractModel
             attributes = 5 + cfg[:output][i][:classes]
 
             # precalculate the offset of prediction from cell-relative to (last) layer-relative
-            offset = maybe_gpu(reshape(zeros(Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
-            @views for i in 0:w-1, j in 0:h-1
-                offset[i+1, j+1, 1, :, :] = offset[i+1, j+1, 1, :, :] .+ i
-                offset[i+1, j+1, 2, :, :] = offset[i+1, j+1, 2, :, :] .+ j
+            offset = maybe_gpu(similar(test_batches[1], Float32, w, h, 2, length(anchormask), b))
+            for j in 0:w-1, k in 0:h-1
+                offset[j+1, k+1, 1, :, :] .= j
+                offset[j+1, k+1, 2, :, :] .= k
             end
 
             # precalculate the scale factor from layer-relative to image-relative
-            scale = maybe_gpu(reshape(similar(out, Float32, w*h*2*length(anchormask)*b), w, h, 2, length(anchormask), b))
-            scale .= 1.0f0
-
-            @views for i in 0:w-1, j in 0:h-1
-                scale[i+1, j+1, 1, :, :] = scale[i+1, j+1, 1, :, :] .* stridew
-                scale[i+1, j+1, 2, :, :] = scale[i+1, j+1, 2, :, :] .* strideh
-            end
+            scale = maybe_gpu(similar(test_batches[1], Float32, w, h, 2, length(anchormask), b))
+            scale[:, :, 1, :, :] .= stridew
+            scale[:, :, 2, :, :] .= strideh
 
             # precalculate the anchor shapes to scale up the detection boxes
-            x = similar(out, Float32, w*h*2*length(anchormask)*b)
-            x .= 1.0f0
-            anchor = maybe_gpu(reshape(x, w, h, 2, length(anchormask), b))
-
-            for i in 1:length(anchormask)
-                anchor[:, :, 1, i, :] .= anchorvals[1, i] * stridew
-                anchor[:, :, 2, i, :] .= anchorvals[2, i] * strideh
+            anchor = maybe_gpu(similar(test_batches[1], Float32, w, h, 2, length(anchormask), b))
+            for j in eachindex(anchormask)
+                anchor[:, :, 1, j, :] .= anchorvals[1, j] * stridew
+                anchor[:, :, 2, j, :] .= anchorvals[2, j] * strideh
             end
 
             out[i][:size] = (w, h, attributes, length(anchormask), b)
             out[i][:offset] = offset
             out[i][:scale] = scale
             out[i][:anchor] = anchor
-            out[i][:truth] = get(cfg[:output][i], :truth_thresh, get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
-            out[i][:ignore] = get(cfg[:output][i], :ignore_thresh, 0.3) # for ignoring detections of same object (overlapping)
+            get!(cfg[:output][i], :truth_thresh,  get(cfg[:output][i], :thresh, 0.0)) # for object being detected (at all). Called thresh in v2
+            get!(cfg[:output][i], :ignore_thresh, 1.0) # for ignoring detections of same object (overlapping)
+            out[i][:truth_thresh] = cfg[:output][i][:truth_thresh]
+            out[i][:ignore_thresh] = cfg[:output][i][:ignore_thresh]
         end
 
         yolomod = new(cfg, Flux.Chain(chainstack), W, out, uses_gpu)
@@ -443,9 +474,9 @@ Returns model size tuple in (width, height, channels, batchsize) order (row-majo
 get_input_size(model::Yolo) = (get_cfg(model)[:width], get_cfg(model)[:height], get_cfg(model)[:channels], get_cfg(model)[:batchsize])
 
 function Base.show(io::IO, yolo::Yolo)
-    detect_thresh = get(yolo.cfg[:output][1], :truth_thresh, get(yolo.cfg[:output][1], :thresh, 0.0))
-    overlap_thresh = get(yolo.cfg[:output][1], :ignore_thresh, 0.0)
-    ln1 = "YOLO v$(yolo.cfg[:yoloversion]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
+    detect_thresh = yolo.cfg[:output][1][:truth_thresh]
+    overlap_thresh = yolo.cfg[:output][1][:ignore_thresh]
+    ln1 = "$(yolo.cfg[:cfgname]). Trained with DarkNet $(yolo.cfg[:darknetversion])\n"
     ln2 = "WxH: $(yolo.cfg[:width])x$(yolo.cfg[:height])   channels: $(yolo.cfg[:channels])   batchsize: $(yolo.cfg[:batchsize])\n"
     ln3 = "gridsize: $(yolo.cfg[:gridsize][1])x$(yolo.cfg[:gridsize][2])   classes: $(yolo.cfg[:output][1][:classes])   thresholds: Detect $detect_thresh. Overlap $overlap_thresh"
     print(io, ln1 * ln2 * ln3)
@@ -460,20 +491,21 @@ end
 Sets all values under a given threshold to zero
 """
 function clipdetect!(input::AbstractArray, conf)
-   rows, cols = size(input)
-   for i in 1:cols
-       input[5, i] = ifelse(input[5, i] > conf, input[5, i], Float32(0))
-   end
+    @inbounds for i in axes(input, 2)
+        if input[end-2, i] < conf
+            input[end-2, i] = 0f0
+        end
+    end
 end
 
 """
-    findmax!(input::Array{T}, idst::Int, idend::Int) where {T}
+    findmax!(input::Array{T}) where {T}
 
 Findmax, get the class with highest confidence and class number out.
 """
-function findmax!(input::AbstractArray{T}, idst::Int, idend::Int) where {T}
-    for i in 1:size(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(@view input[idst:idend, i])
+function findmax!(input::AbstractArray{T}) where {T}
+    @inbounds for i in axes(input, 2)
+        input[end-2, i], input[end-1, i] = findmax(@view input[6:end-3, i])
     end
 end
 
@@ -484,7 +516,7 @@ end
 Reduces the size of array and only keeps detections over threshold
 """
 function keepdetections(arr::AbstractArray)
-    return arr[:, arr[5, :] .> 0]
+    return arr[:, arr[end-2, :] .> 0]
 end
 
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
@@ -498,7 +530,7 @@ check_w_type(::UnsafeArray) = throw(ArgumentError("Internal error: UnsafeArray h
 check_w_type(::Any) = nothing
 
 """
-    (yolo::Yolo)(img::AbstractArray;  detect_thresh=nothing, overlap_thresh=yolo.out[1][:ignore])
+    (yolo::Yolo)(img::AbstractArray;  detect_thresh=nothing, overlap_thresh=nothing)
 
 Simply pass a batch of images to the yolo object to do inference.
 
@@ -507,7 +539,7 @@ overlap_thresh: Optionally override the maximum allowable overlap (IoU)
 show_timing::Bool=false: Show timing information for each layer
 conf_fix::Bool=true: Apply fix to the confidence score calculation. Without this the class scores are not multiplied by the box confidence score, as they should be.
 """
-function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][:ignore], show_timing=false, conf_fix=true) where {T <: AbstractArray}
+function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, show_timing=false, conf_fix=true) where {T <: AbstractArray}
     if show_timing
         enable_timer!(to)
         reset_timer!(to)
@@ -548,12 +580,11 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
                 end
                 weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
 
-                cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
-
                 # Convert to image width & height scale (0.0-1.0)
                 weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
                 weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
-                if yolo.cfg[:yoloversion] == 2
+                if yolo.cfg[:laststage] === :region # indicates yolov2
+                    cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
                     weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
                     weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
                 else
@@ -574,9 +605,9 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
                 weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
                 weights = reshape(weights, a+4, :) # reshape to attr, data
 
-                thresh = detect_thresh === nothing ? Float32(out[:truth]) : Float32(detect_thresh)
-                clipdetect!(weights, thresh) # set all detections below conf-thresh to zero
-                findmax!(weights, 6, a)
+                detect_thresh = Float32(@something detect_thresh out[:truth_thresh])
+                findmax!(weights)
+                clipdetect!(weights, detect_thresh) # set all detections below conf-thresh to zero
                 push!(outweights, weights)
             end
 
@@ -585,14 +616,11 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
             @timeit to "filter detections" batchout = Flux.cpu(keepdetections(cat(outweights..., dims=2)))
 
             if size(batchout, 2) < 2
-                if show_timing
-                    show(to, sortby=:firstexec)
-                    println()
-                end
                 ret = batchout # empty or singular output doesn't need further filtering
             else
                 batchsize = yolo.cfg[:batchsize]
                 @timeit to "nms" begin
+                    overlap_thresh = Float32(@something overlap_thresh yolo.out[1][:ignore_thresh])
                     ret = perform_detection_nms(batchout, overlap_thresh, batchsize)
                 end
             end
@@ -605,6 +633,6 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=yolo.out[1][
     return ret
 end
 
-include(joinpath(@__DIR__,"pretrained.jl"))
+include(joinpath(@__DIR__, "pretrained.jl"))
 
 end #module

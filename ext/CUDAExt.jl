@@ -29,8 +29,9 @@ function kern_clipdetect(input::CuDeviceArray, conf::Float32)
 end
 
 
-function findmax!(input::CuArray, idst::Int, idend::Int)
+function findmax!(input::CuArray)
     rows, cols = size(input)
+    idst, idend = 6, rows - 3
     @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
 end
 function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) where {T}
