@@ -45,27 +45,14 @@ include("resrefs.jl")
         @info "Testing model $modelname"
 
         yolomod, net = nothing, nothing
-        @testset "Load in ObjectDetector.jl" begin
-            yolomod = try
-                YOLO.yolo_model(modelname; silent=true)
-            catch e
-                e isa InterruptException && rethrow()
-                @warn "Failed to load model in ObjectDetector.jl" modelname exception=e
-                nothing
-            end
-            @test yolomod !== nothing
-        end
 
         @testset "Load in Darknet.jl" begin
-            net = try
-                @suppress Darknet.load_network(cfgfile, weightsfile, 1)
-            catch e
-                e isa InterruptException && rethrow()
-                @warn "Failed to load model in Darknet.jl" modelname exception=e
-                nothing
-            end
-            @test net !== nothing
+            net = @suppress Darknet.load_network(cfgfile, weightsfile, 1)
         end
+        @testset "Load in ObjectDetector.jl" begin
+            yolomod = YOLO.yolo_model(modelname; silent=true)
+        end
+
         (yolomod === nothing || net === nothing) && continue
 
         @testset "$imagename" for imagename in testimages
@@ -78,36 +65,20 @@ include("resrefs.jl")
             batch[:,:,:,1] .= img_padded
             @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded)
 
-            juliares = try
-                yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh)
-            catch e
-                e isa InterruptException && rethrow()
-                @warn "ObjectDetector inference failed" modelname imagename exception=(e, catch_backtrace())
-                nothing
-            end
+            # test darknet
+            img_padded_darknet = collect(PermutedDimsArray(img_padded, (3, 2, 1)))
+            img_d = Darknet.array_to_image(img_padded_darknet)
+            darkres = Darknet.detect(net, meta, img_d, thresh=dThresh, nms=oThresh)
+
+            # test ObjectDetector
+            juliares = yolomod(batch, detect_thresh=dThresh, overlap_thresh=oThresh)
 
             od_resimg = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
                 @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares)
             end
 
-            # Rmove the alpha channel
-            img_padded_darknet = collect(PermutedDimsArray(img_padded, (3, 2, 1)))
-            darkres = try
-                img_d = Darknet.array_to_image(img_padded_darknet)
-                Darknet.detect(net, meta, img_d, thresh=dThresh, nms=oThresh)
-            catch e
-                e isa InterruptException && rethrow()
-                @warn "Darknet inference failed" modelname imagename exception=(e, catch_backtrace())
-                nothing
-            end
-
-            @test darkres !== nothing
-            @test juliares !== nothing
-            (darkres === nothing || juliares === nothing) && continue
-
             darkres_xyxy = zeros(Float32, size(juliares, 1), length(darkres))
-
             # Note: These might be the wrong way around, but our padded input is
             # square so it doesn't matter here currently
             img_h, img_w = size(img_padded, 1), size(img_padded, 2)
