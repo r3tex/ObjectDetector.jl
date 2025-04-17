@@ -129,6 +129,10 @@ include("resrefs.jl")
             @test ReferenceTests._psnr(load(od_resimg), load(darknet_resimg)) > 30.0
             @test size(darkres_xyxy, 2) > 0
             @test size(darkres_xyxy) == size(juliares)
+            if size(darkres_xyxy) != size(juliares)
+                # Don't test further because the tests below will show as errors not failures
+                continue
+            end
             dark_sorted = sortslices(darkres_xyxy, dims=2, by = x -> x[1])
             julia_sorted = sortslices(juliares, dims=2, by = x -> x[1])
 
