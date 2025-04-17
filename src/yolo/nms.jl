@@ -11,7 +11,7 @@ and multiple boxes `box2`, writing results into `out`.
 
 Avoids allocations by reusing `out`.
 """
-function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false) where T
+function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false, beta = T(0.6)) where T
     b1x1, b1y1, b1x2, b1y2 = box1
     b1w = b1x2 - b1x1
     b1h = b1y2 - b1y1
@@ -50,7 +50,14 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false) where
             enc_y2 = max(b1y2, b2y2)
             c2 = (enc_x2 - enc_x1)^2 + (enc_y2 - enc_y1)^2 + eps(T)
 
-            out[i] = iou - center_dist_sq / c2
+            # Apply the DIoU term based on the Darknet box_diounms formula
+            d = center_dist_sq
+            c = c2
+            u = (d / c) ^ beta  # Apply beta scaling here
+            diou_term = u
+
+            # IoU with DIoU penalty applied
+            out[i] = iou - diou_term
         else
             out[i] = iou
         end
@@ -59,7 +66,7 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false) where
 end
 
 """
-    nms(dets, iou_thresh; kind=:greedynms, beta=0.6f0)
+    nms(dets, iou_thresh; kind=:default, beta=0.6f0)
 
 Performs Non-Maximum Suppression (NMS) on a set of detection boxes `dets`, returning the indices
 of boxes to keep. This function supports multiple NMS strategies:
@@ -72,15 +79,18 @@ Arguments:
 
 Keyword Arguments:
 - `kind` (`Symbol`): NMS method to use. Supported:
-    - `:greedynms` (default): traditional hard-threshold NMS
+    - `:default` (default): traditional hard-threshold NMS
+    - `:greedynms` score-decay using IoU penalty (`score *= 1 - IoU`) with fixed beta of 0.6
     - `:diounms`: score-decay using IoU penalty (`score *= 1 - IoU`)
     - `:soft`: Soft-NMS using exponential decay (`score *= exp(-IoU^2 / beta)`)
 - `beta` (`Float32`): smoothing factor for soft-NMS (default `0.6`)
 
 Returns:
 - `keep`: a vector of column indices in `dets` to retain
+
+See https://github.com/AlexeyAB/darknet/blob/9d40b619756be9521bc2ccd81808f502daaa3e9a/src/box.c#L195
 """
-function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :greedynms, beta::T = T(0.6)) where T
+function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::T = T(0.6)) where T
     N = size(dets, 2)
     idxs = similar(dets, Int, N)
     @inbounds for j in 1:N
@@ -107,11 +117,11 @@ function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :greedynms, beta
 
         # Note that even diounms uses iou in inference. During training apparently it uses diou though.
         # That needs a further investigation though
-        distance = false
-        bboxiou!(view(ious, 1:b2_len), b1, b2s; distance)
+        distance = kind in (:greedynms, :diounms)
+        bboxiou!(view(ious, 1:b2_len), b1, b2s; distance, beta)
 
         write_idx = 0
-        if kind === :greedynms || kind === :diounms
+        if kind in (:default, :greedynms, :diounms)
             @inbounds for j in 1:b2_len
                 if ious[j] < iou_thresh
                     write_idx += 1
@@ -161,7 +171,7 @@ batchout rows:
 - end-1: the class index
 - The last row is the batch index
 """
-function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:greedynms, beta::Float32=0.6f0)
+function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0)
     output = similar(batchout)
     i = 1  # index for writing into `output`
 

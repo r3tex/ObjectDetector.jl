@@ -546,7 +546,7 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["\n($cfg_idx) ","shortcut($idx,$cfg_idx)"," => "],[:blue,:cyan,:green])
             elseif blocktype in (:yolo, :region)
                 get!(block, :iou_loss, "mse")
-                get!(block, :nms_kind, :greedynms)
+                get!(block, :nms_kind, :default)
                 get!(block, :beta_nms, 0.6)
                 get!(block, :scale_x_y, 1.0f0)
                 get!(block, :new_coords, 0)
