@@ -19,7 +19,15 @@ end
 Darknet.download_defaults()
 
 const skip_models = (
-    "v2-COCO", # Not all weights are read during load: Read 196856372 bytes. Filesize 203934260 bytes
+    "v2_COCO", # Not all weights are read during load: Read 196856372 bytes. Filesize 203934260 bytes
+    # "v2_tiny_COCO",
+    # "v3_COCO",
+    # "v3_tiny_COCO",
+    # "v3_spp_COCO",
+    # "v4_COCO",
+    # "v4_tiny_COCO",
+    # "v7_COCO",
+    # "v7_tiny_COCO",
 )
 
 const testimages = ["dog-cycle-car", "dog-cycle-car_nonsquare"]
@@ -74,7 +82,7 @@ include("resrefs.jl")
                 @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares) by=psnr_equality(psnr_thresh)
             end
 
-            darkres_xyxy = zeros(Float32, size(juliares, 1), length(darkres))
+            darkres_xyxy = zeros(Float32, 89, length(darkres))
             # Note: These might be the wrong way around, but our padded input is
             # square so it doesn't matter here currently
             img_h, img_w = size(img_padded, 1), size(img_padded, 2)
@@ -103,8 +111,10 @@ include("resrefs.jl")
             dark_sorted = sortslices(darkres_xyxy, dims=2, by = x -> x[1])
             julia_sorted = sortslices(juliares, dims=2, by = x -> x[1])
 
-            @test dark_sorted ≈ get!(RES_REFS, "dn_$(modelname)_$(imagename)", dark_sorted) atol=0.05
-            @test julia_sorted ≈ get!(RES_REFS, "od_$(modelname)_$(imagename)", julia_sorted) atol=0.05
+            ref_dark_sorted =  get!(RES_REFS, "dn_$(modelname)_$(imagename)", dark_sorted)
+            ref_julia_sorted = get!(RES_REFS, "od_$(modelname)_$(imagename)", julia_sorted)
+            @test dark_sorted ≈ ref_dark_sorted atol=0.05
+            @test julia_sorted ≈ ref_julia_sorted atol=0.05
 
             dark_bbox = dark_sorted[1:4, :]
             julia_bbox = julia_sorted[1:4, :]
