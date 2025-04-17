@@ -151,7 +151,7 @@ function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArra
     for i in 1:size(results,2)
         bbox = results[1:4, i] .- padding
         class = results[end-1, i]
-        conf = results[5,i]
+        conf = results[end-2,i]
         p = Point(round(Int, bbox[x1i]*w)+1, round(Int, bbox[y1i]*h)+1)
         q = Point(round(Int, bbox[x2i]*w), round(Int, bbox[y1i]*h)+1)
         r = Point(round(Int, bbox[x1i]*w)+1, round(Int, bbox[y2i]*h))
