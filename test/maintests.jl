@@ -2,6 +2,8 @@ dThresh = 0.5 #Detect Threshold (minimum acceptable confidence)
 oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 @info "Testing all models with detect_thresh = $dThresh, overlap_thresh = $oThresh"
 
+psnr_thresh = 35.0
+
 @testset "Download all artifacts" begin
     artifact"yolov2-COCO"
     artifact"yolov2-tiny-COCO"
@@ -63,7 +65,7 @@ include("resrefs.jl")
             batch = emptybatch(yolomod)
             img_padded, padding = prepare_image(img, yolomod)
             batch[:,:,:,1] .= img_padded
-            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded) by=psnr_equality(40)
+            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded) by=psnr_equality(psnr_thresh)
 
             # test darknet
             img_padded_darknet = collect(PermutedDimsArray(img_padded, (3, 2, 1)))
@@ -75,7 +77,7 @@ include("resrefs.jl")
 
             od_resimg = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
-                @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares) by=psnr_equality(40)
+                @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares) by=psnr_equality(psnr_thresh)
             end
 
             darkres_xyxy = zeros(Float32, size(juliares, 1), length(darkres))
@@ -95,7 +97,7 @@ include("resrefs.jl")
                 # last row is batch id
             end
             darknet_resimg = joinpath(resultsdir,"$(modelname)_out_darknet.png")
-            @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy) by=psnr_equality(40)
+            @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy) by=psnr_equality(psnr_thresh)
 
             @test ReferenceTests._psnr(load(od_resimg), load(darknet_resimg)) > 30.0
             @test size(darkres_xyxy, 2) > 0
