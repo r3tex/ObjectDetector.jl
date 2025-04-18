@@ -1,7 +1,12 @@
 # ObjectDetector.jl
 
-Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models.
-Uses CUDA, if available.
+Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models. Uses CUDA, if available.
+
+Supported YOLO models are: `v2`, `v2-tiny`, `v3`, `v3-spp`, `v3-tiny`, `v4`, `v4-tiny`, `v7`, `v7-tiny`
+
+Other less standard models may work also.
+
+Note that v3+ models have result parity with [AlexeyAB/darknet](https://github.com/AlexeyAB/darknet), and are directly tested against [Darknet.jl](https://github.com/IanButterworth/Darknet.jl) (see tests)
 
 ## Installation
 
@@ -58,19 +63,25 @@ yolomod = YOLO.v3_608_COCO(batch=1, disable_bumper=true)
 imgBoxes = draw_boxes(img, yolomod, padding, res)
 save("result.png", imgBoxes)
 ```
-![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_608_COCO.png)
+![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_COCO_out_od.png)
 
 
 ## Pretrained Models
 The darknet YOLO models from https://pjreddie.com/darknet/yolo/ that are pretrained on the COCO dataset are available:
 
 ```julia
-YOLO.v2_COCO() #Currently broken
+YOLO.v2_COCO() #Currently broken (weights seem bad, model may work with custom weights)
 YOLO.v2_tiny_COCO()
 
 YOLO.v3_COCO()
-YOLO.v3_spp_608_COCO() #Currently broken
+YOLO.v3_spp_608_COCO()
 YOLO.v3_tiny_COCO()
+
+YOLO.v4_COCO()
+YOLO.v4_tiny_COCO()
+
+YOLO.v7_COCO()
+YOLO.v7_tiny_COCO()
 ```
 Their width and height can be modified with:
 ```julia
@@ -94,6 +105,7 @@ YOLO.v3_416_COCO()
 YOLO.v3_608_COCO()
 YOLO.v3_spp_608_COCO()
 YOLO.v3_tiny_416_COCO()
+etc.
 ```
 
 Or custom models can be loaded with:
@@ -115,35 +127,64 @@ The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3
 
 Pretrained models can be easily tested with `ObjectDetector.benchmark()`.
 
-Note that the benchmark was run once before the examples here. Initial load time
-of the first model loaded is typically between 3-20 seconds. See the [package-compilation](#package-compilation)  section below for compilation instructions to speed up loading.
+During the benchmark `detect_thresh` is minimized and `overlap_thresh` is maximised to return maximum
+results, for worst case testing.
 
-A desktop with a GTX 2060:
+Note that the first model load will be slower due to JIT.
+
+### A M2 Macbook Pro (CPU-only, no CUDA)
+
 ```
 julia> ObjectDetector.benchmark()
-
-┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
-│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
-├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
-│ v2_tiny_416_COCO │    true │          0.16 │ true │       0.0037 │          266.7 │
-│ v3_tiny_416_COCO │    true │         0.243 │ true │       0.0042 │          236.4 │
-│      v3_320_COCO │    true │         1.264 │ true │       0.0209 │           47.8 │
-│      v3_416_COCO │    true │         1.456 │ true │        0.031 │           32.3 │
-│      v3_608_COCO │    true │         2.423 │ true │       0.0686 │           14.6 │
-└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
+┌──────────────────┬─────────┬───────────────┬──────────┬──────────────┬────────────────┬─────────────┐
+│            Model │ loaded? │ load time (s) │ #results │ run time (s) │ run time (fps) │ allocations │
+├──────────────────┼─────────┼───────────────┼──────────┼──────────────┼────────────────┼─────────────┤
+│ v2_tiny_416_COCO │    true │         5.793 │      845 │       0.0385 │           26.0 │ 706.312 KiB │
+│ v3_tiny_416_COCO │    true │         1.003 │     2535 │       0.0428 │           23.3 │   1.911 MiB │
+│ v4_tiny_416_COCO │    true │         0.597 │     2535 │       0.0639 │           15.6 │   1.918 MiB │
+│ v7_tiny_416_COCO │    true │         0.796 │    10647 │       0.2637 │            3.8 │   7.704 MiB │
+│      v3_416_COCO │    true │         1.701 │    10647 │        0.354 │            2.8 │   7.773 MiB │
+│  v3_spp_416_COCO │    true │         1.471 │    10647 │        0.399 │            2.5 │   7.870 MiB │
+│      v4_416_COCO │    true │         1.681 │    10647 │       0.9003 │            1.1 │   7.994 MiB │
+│      v7_416_COCO │    true │          1.45 │    10647 │       0.9375 │            1.1 │   7.833 MiB │
+└──────────────────┴─────────┴───────────────┴──────────┴──────────────┴────────────────┴─────────────┘
 ```
 
-A 2019 Macbook Pro (CPU-only, no CUDA):
+### A desktop with an AMD Ryzen 9 5950X & GTX 2060
+
+Without CUDA:
 ```
-┌──────────────────┬─────────┬───────────────┬──────┬──────────────┬────────────────┐
-│            Model │ loaded? │ load time (s) │ ran? │ run time (s) │ run time (fps) │
-├──────────────────┼─────────┼───────────────┼──────┼──────────────┼────────────────┤
-│ v2_tiny_416_COCO │    true │         0.305 │ true │       0.1383 │            7.2 │
-│ v3_tiny_416_COCO │    true │         0.267 │ true │       0.1711 │            5.8 │
-│      v3_320_COCO │    true │         1.617 │ true │       0.8335 │            1.2 │
-│      v3_416_COCO │    true │         2.377 │ true │       1.4138 │            0.7 │
-│      v3_608_COCO │    true │         4.239 │ true │       3.1122 │            0.3 │
-└──────────────────┴─────────┴───────────────┴──────┴──────────────┴────────────────┘
+julia> ObjectDetector.benchmark()
+┌──────────────────┬─────────┬───────────────┬──────────┬──────────────┬────────────────┬─────────────┐
+│            Model │ loaded? │ load time (s) │ #results │ run time (s) │ run time (fps) │ allocations │
+├──────────────────┼─────────┼───────────────┼──────────┼──────────────┼────────────────┼─────────────┤
+│ v2_tiny_416_COCO │    true │        10.855 │      845 │        0.043 │           23.3 │ 686.102 KiB │
+│ v3_tiny_416_COCO │    true │         1.604 │     2535 │       0.0491 │           20.4 │   1.882 MiB │
+│ v4_tiny_416_COCO │    true │         0.923 │     2535 │       0.0796 │           12.6 │   1.900 MiB │
+│ v7_tiny_416_COCO │    true │         1.269 │    10647 │        0.315 │            3.2 │   7.676 MiB │
+│      v3_416_COCO │    true │         2.358 │    10647 │       0.3504 │            2.9 │   7.759 MiB │
+│  v3_spp_416_COCO │    true │         1.607 │    10647 │       0.4139 │            2.4 │   7.713 MiB │
+│      v4_416_COCO │    true │         2.097 │    10647 │        1.308 │            0.8 │   7.741 MiB │
+│      v7_416_COCO │    true │         2.123 │    10647 │       1.0864 │            0.9 │   7.709 MiB │
+└──────────────────┴─────────┴───────────────┴──────────┴──────────────┴────────────────┴─────────────┘
+```
+With CUDA
+```
+julia> using CUDA, cuDNN
+
+julia> ObjectDetector.benchmark()
+┌──────────────────┬─────────┬───────────────┬──────────┬──────────────┬────────────────┬─────────────┐
+│            Model │ loaded? │ load time (s) │ #results │ run time (s) │ run time (fps) │ allocations │
+├──────────────────┼─────────┼───────────────┼──────────┼──────────────┼────────────────┼─────────────┤
+│ v2_tiny_416_COCO │    true │        20.528 │      844 │       0.0022 │          451.0 │   2.349 MiB │
+│ v3_tiny_416_COCO │    true │         1.264 │     2534 │       0.0063 │          159.2 │  10.080 MiB │
+│ v4_tiny_416_COCO │    true │          0.62 │     2534 │       0.0202 │           49.5 │  10.148 MiB │
+│ v7_tiny_416_COCO │    true │          0.69 │    10646 │       0.3012 │            3.3 │ 115.685 MiB │
+│      v3_416_COCO │    true │         1.204 │    10646 │       0.0587 │           17.0 │  97.878 MiB │
+│  v3_spp_416_COCO │    true │         0.582 │    10646 │       0.1106 │            9.0 │ 189.964 MiB │
+│      v4_416_COCO │    true │         0.944 │    10646 │       0.8072 │            1.2 │ 272.358 MiB │
+│      v7_416_COCO │    true │         0.971 │    10646 │       0.5745 │            1.7 │ 199.325 MiB │
+└──────────────────┴─────────┴───────────────┴──────────┴──────────────┴────────────────┴─────────────┘
 ```
 
 ## Examples
@@ -151,36 +192,22 @@ A 2019 Macbook Pro (CPU-only, no CUDA):
 All run with `detect_thresh = 0.5`, `overlap_thresh = 0.5`
 
 ### YOLO.v2_tiny_416_COCO
-![v2_tiny_416_COCO](test/results/dog-cycle-car/v2_tiny_416_COCO.png)
+![v2_tiny_COCO](test/results/dog-cycle-car/v2_tiny_COCO_out_od.png)
 
 ### YOLO.v3_tiny_416_COCO
-![v3_tiny_416_COCO](test/results/dog-cycle-car/v3_tiny_416_COCO.png)
-
-### YOLO.v3_320_COCO
-![v3_320_COCO](test/results/dog-cycle-car/v3_320_COCO.png)
+![v3_tiny_COCO](test/results/dog-cycle-car/v3_tiny_COCO_out_od.png)
 
 ### YOLO.v3_416_COCO
-![v3_416_COCO](test/results/dog-cycle-car/v3_416_COCO.png)
+![v3_COCO](test/results/dog-cycle-car/v3_COCO_out_od.png)
 
-### YOLO.v3_608_COCO
-![v3_608_COCO](test/results/dog-cycle-car/v3_608_COCO.png)
+### YOLO.v4_tiny_416_COCO
+![v4_tiny_COCO](test/results/dog-cycle-car/v4_tiny_COCO_out_od.png)
 
+### YOLO.v4_416_COCO
+![v4_COCO](test/results/dog-cycle-car/v4_COCO_out_od.png)
 
-## Package Compilation
+### YOLO.v7_tiny_416_COCO
+![v7_tiny_COCO](test/results/dog-cycle-car/v7_tiny_COCO_out_od.png)
 
-If initial load times are critical, the package can be compiled and loaded as a
-sysimage, such that initial load time reduces to ~4 seconds, and loading of the
-first model also takes ~4 seconds (as opposed to current performance on 1.3.0 of
-~20 seconds for package load, and ~20 seconds for first model load).
-
-See [dev/compilation/compiler.jl](dev/compilation/compiler.jl) for instructions.
-
-[discourse-tag-url]: https://discourse.julialang.org/tags/yolo
-
-[codecov-img]: https://codecov.io/gh/r3tex/ObjectDetector.jl/branch/master/graph/badge.svg
-[codecov-url]: https://codecov.io/gh/r3tex/ObjectDetector.jl
-
-[coveralls-img]: https://coveralls.io/repos/github/r3tex/ObjectDetector.jl/badge.svg?branch=master
-[coveralls-url]: https://coveralls.io/github/r3tex/ObjectDetector.jl?branch=master
-
-[issues-url]: https://github.com/r3tex/ObjectDetector.jl/issues
+### YOLO.v7_416_COCO
+![v7_COCO](test/results/dog-cycle-car/v7_COCO_out_od.png)

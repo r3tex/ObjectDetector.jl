@@ -167,13 +167,13 @@ end
 
 Convenient benchmarking
 """
-function benchmark(;select = [1,2,6], reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
+function benchmark(;select = [1,2,3,4,6,7,8,9], reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
     pretrained_list = [
                         YOLO.v2_tiny_416_COCO,
                         YOLO.v3_tiny_416_COCO,
                         YOLO.v4_tiny_416_COCO,
                         YOLO.v7_tiny_416_COCO,
-                        YOLO.v2_416_COCO, # broken weights?
+                        YOLO.v2_416_COCO,
                         YOLO.v3_416_COCO,
                         YOLO.v3_spp_416_COCO,
                         YOLO.v4_416_COCO,

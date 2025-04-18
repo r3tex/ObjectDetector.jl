@@ -1,7 +1,7 @@
 const YOLO_MODELS = Dict{String, Any}(
-    "v2_COCO"         => () -> (joinpath(models_dir(), "yolov2-608.cfg"),   joinpath(artifact"yolov2-COCO",        "yolov2-COCO.weights")),
+    "v2_COCO"         => () -> (joinpath(models_dir(), "yolov2.cfg"),       joinpath(artifact"yolov2-COCO",        "yolov2-COCO.weights")),
     "v2_tiny_COCO"    => () -> (joinpath(models_dir(), "yolov2-tiny.cfg"),  joinpath(artifact"yolov2-tiny-COCO",   "yolov2-tiny-COCO.weights")),
-    "v3_COCO"         => () -> (joinpath(models_dir(), "yolov3-416.cfg"),   joinpath(artifact"yolov3-COCO",        "yolov3-COCO.weights")),
+    "v3_COCO"         => () -> (joinpath(models_dir(), "yolov3.cfg"),       joinpath(artifact"yolov3-COCO",        "yolov3-COCO.weights")),
     "v3_spp_COCO"     => () -> (joinpath(models_dir(), "yolov3-spp.cfg"),   joinpath(artifact"yolov3-spp-COCO",    "yolov3-spp-COCO.weights")),
     "v3_tiny_COCO"    => () -> (joinpath(models_dir(), "yolov3-tiny.cfg"),  joinpath(artifact"yolov3-tiny-COCO",   "yolov3-tiny-COCO.weights")),
     "v4_COCO"         => () -> (joinpath(models_dir(), "yolov4.cfg"),       joinpath(artifact"yolov4-COCO",        "yolov4-COCO.weights")),

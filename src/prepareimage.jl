@@ -70,7 +70,7 @@ function prepare_image(img::AbstractArray{T}, model::AbstractModel) where {T<:Im
             return (maybe_gpu(Float32.(PermutedDimsArray(view(img_chv,1:3,:,:), [3,2,1]))), [0,0,0,0])
 
         else
-            error("Image element type $(eltype(img)) not supported")
+            error("Image element type $T not supported")
         end
     else
         img_size = size(img)[[2,1]]
