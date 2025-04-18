@@ -39,7 +39,7 @@ end
 
 Perform a simple Non-Maximum Suppression (NMS) on the detections `dets`.
 `dets` is a 2D array of shape (≥5, N), assumed to be sorted in descending
-order by the 5th column (i.e., confidence or score). `iou_thresh` is
+order by the end-2 column (i.e. class confidence score). `iou_thresh` is
 the overlap threshold above which boxes are considered duplicates.
 
 Returns an array of indexes `keep` of the columns in `dets` you want to keep.
@@ -89,7 +89,7 @@ end
     perform_detection_nms(batchout, overlap_thresh, batchsize)
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
-group them by class, sort each group by the 5th column (score) descending, and
+group them by class, sort each group by the end-2 column (class confidence score) descending, and
 run NMS to remove duplicates using bboxiou and overlap_thresh.
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
@@ -101,7 +101,8 @@ batchout rows:
 - 1-4: the bounding box coordinates x1, y1, x2, y2
 - 5: the confidence/score.
 - scores for each class
-- second-to-last row (end-1) has the class index.
+- end-2: the class confidence score (for NMS)
+- end-1: the class index
 - The last row is the batch index
 """
 function perform_detection_nms(batchout, overlap_thresh, batchsize::Int)
@@ -132,7 +133,7 @@ function perform_detection_nms(batchout, overlap_thresh, batchsize::Int)
 
             dets = @view page[:, c_idxs]
 
-            scores = @view dets[5, :]
+            scores = @view dets[end-2, :]
             sorted_idx = sortperm(scores, rev=true)
             # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
             sorted_dets = dets[:, sorted_idx]

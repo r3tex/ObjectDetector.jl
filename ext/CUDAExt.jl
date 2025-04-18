@@ -23,14 +23,15 @@ function kern_clipdetect(input::CuDeviceArray, conf::Float32)
     idx = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
     if idx <= cols
-        @inbounds input[5, idx] = ifelse(input[5, idx] > conf, input[5, idx], Float32(0.0))
+        @inbounds input[end-2, idx] = ifelse(input[end-2, idx] > conf, input[end-2, idx], Float32(0.0))
     end
     return
 end
 
 
-function findmax!(input::CuArray, idst::Int, idend::Int)
+function findmax!(input::CuArray)
     rows, cols = size(input)
+    idst, idend = 6, rows - 3
     @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
 end
 function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) where {T}
@@ -75,7 +76,7 @@ end
 function kern_genbools(input::CuDeviceArray, output::CuDeviceArray)
     col = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
-    if col < cols && input[5, col] > Float32(0)
+    if col < cols && input[end-2, col] > Float32(0)
         @inbounds output[col] = Int32(1)
     end
     return
