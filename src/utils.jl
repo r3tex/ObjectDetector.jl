@@ -83,7 +83,7 @@ function draw_boxes!(img::Union{Matrix{RGBA{N0f8}},Matrix{RGB{N0f8}}}, model::YO
     for i in axes(results,2)
         # extract and scale bbox
         bbox = results[1:4, i] .- padding
-        cls  = Int(results[end-1, i]) + 1 # zero-based
+        cls  = Int(results[end-1, i])
         color = label_colors[cls]
         conf = results[end-2, i]
 
