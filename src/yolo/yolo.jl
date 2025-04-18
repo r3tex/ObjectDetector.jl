@@ -296,6 +296,7 @@ _broadcast(act) = x -> act.(x)
 _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
+_route(val, channels) = x -> val[:, :, channels, :]
 _add(val, act) = x -> act.(x + val)
 _cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 
@@ -612,7 +613,7 @@ mutable struct Yolo <: AbstractModel
                             group_size = size(W[arrayidx], 3) ÷ groups
                             group_start = group_id * group_size + 1
                             group_end = (group_id+1) * group_size
-                            fn[j] = _route(W[arrayidx][:, :, group_start:group_end, :])
+                            fn[j] = _route(W[arrayidx], group_start:group_end)
                         else
                             fn[j] = _route(W[arrayidx])
                         end
