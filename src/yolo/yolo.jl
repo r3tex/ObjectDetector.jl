@@ -240,7 +240,9 @@ function upsample(a::AbstractArray, stride)
     ar = reshape(a, (1, m1, 1, n1, o1, p1))
     b = similar(a, stride, 1, stride, 1, 1, 1)
     b .= 1f0
-    return reshape(ar .* b, (m1 * stride, n1 * stride, o1, p1))
+    ar2 = similar(ar, stride, m1, stride, n1, o1, p1)
+    ar2 .= ar .* b
+    return reshape(ar2, (m1 * stride, n1 * stride, o1, p1))
 end
 
 """
@@ -292,12 +294,12 @@ function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     return true
 end
 
-_broadcast(act) = x -> act.(x)
+_broadcast(act) = x -> broadcast!(act, x, x)
 _upsample(stride) = x -> upsample(x, stride)
 _reorg(stride) = x -> reorg(x, stride)
 _route(val) = x -> val
 _route(val, channels) = x -> val[:, :, channels, :]
-_add(val, act) = x -> act.(x + val)
+_add(val, act) = x -> broadcast!((a, b) -> act(a + b), x, x, val)
 _cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 
 flux_maxpool = true
