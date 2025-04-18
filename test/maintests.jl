@@ -63,7 +63,7 @@ include("resrefs.jl")
             batch = emptybatch(yolomod)
             img_padded, padding = prepare_image(img, yolomod)
             batch[:,:,:,1] .= img_padded
-            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded)
+            @test_reference joinpath(resultsdir,"$(modelname)_in_padded.png") cpu(img_padded) by=psnr_equality(40)
 
             # test darknet
             img_padded_darknet = collect(PermutedDimsArray(img_padded, (3, 2, 1)))
@@ -75,7 +75,7 @@ include("resrefs.jl")
 
             od_resimg = joinpath(resultsdir,"$(modelname)_out_od.png")
             if juliares !== nothing
-                @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares)
+                @test_reference od_resimg draw_boxes(img, yolomod, padding, juliares) by=psnr_equality(40)
             end
 
             darkres_xyxy = zeros(Float32, size(juliares, 1), length(darkres))
@@ -95,7 +95,7 @@ include("resrefs.jl")
                 # last row is batch id
             end
             darknet_resimg = joinpath(resultsdir,"$(modelname)_out_darknet.png")
-            @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy)
+            @test_reference darknet_resimg draw_boxes(img, yolomod, padding, darkres_xyxy) by=psnr_equality(40)
 
             @test ReferenceTests._psnr(load(od_resimg), load(darknet_resimg)) > 30.0
             @test size(darkres_xyxy, 2) > 0
