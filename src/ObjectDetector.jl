@@ -15,6 +15,8 @@ using PrecompileTools
 using TimerOutputs
 using AllocArrays
 using Adapt
+using Cairo
+using Colors
 
 const to = TimerOutput()
 
