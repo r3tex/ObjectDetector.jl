@@ -31,10 +31,100 @@ createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
     draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
     draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
 
-Draw boxes on image for each BBOX result.
+Draw class-colored boxes with conf labels on image for each BBOX result.
+With `draw_boxes!` if `img` is not a color image only boxes are drawn in black.
 """
-draw_boxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true) = draw_boxes!(copy(img), model, padding, results, transpose=transpose)
-function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true)
+function draw_boxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; kwargs...)
+    if size(img, 3) == 4
+        imgc = colorview(RGBA{N0f8}, img[:, :, 1:3])
+    elseif eltype(img) <: Gray{N0f8}
+        imgc = RGB{N0f8}.(img)
+    else
+        imgc = colorview(RGBA{N0f8}, img)
+    end
+    return draw_boxes!(copy(imgc), model, padding, results; kwargs...)
+end
+function draw_boxes(img::Union{Matrix{RGBA{N0f8}}, Matrix{RGB{N0f8}}}, model::YOLO.Yolo, padding::AbstractArray, results; kwargs...)
+    return draw_boxes!(copy(img), model, padding, results; kwargs...)
+end
+
+function draw_boxes!(img::Union{Matrix{RGBA{N0f8}},Matrix{RGB{N0f8}}}, model::YOLO.Yolo, padding::AbstractArray, results;
+    transpose=true, fontsize=12, opacity=0.8)
+
+    classes = get_cfg(model)[:output][1][:classes]
+    seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]
+    label_colors = Colors.distinguishable_colors(classes, seed; dropseed=true)
+    imgratio = size(img,2) / size(img,1)
+    if transpose
+        modelratio = get_cfg(model)[:width]  / get_cfg(model)[:height]
+        x1i,y1i,x2i,y2i = 1,2,3,4
+    else
+        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
+        x1i,y1i,x2i,y2i = 2,1,4,3
+    end
+    if modelratio > imgratio
+        h, w = size(img,1) .* (1, modelratio)
+    else
+        h, w = size(img,2) ./ (modelratio, 1)
+    end
+    length(results) == 0 && return img
+
+    img_rgb24 = similar(img, RGB24)
+    img_rgb24 .= RGB24.(img)
+    surf = CairoImageSurface(img_rgb24)
+    ctx  = CairoContext(surf)
+    Cairo.set_matrix(ctx, Cairo.CairoMatrix(0, 1, 1, 0, 0, 0))
+
+    for i in axes(results,2)
+        # extract and scale bbox
+        bbox = results[1:4, i] .- padding
+        cls  = Int(results[end-1, i]) + 1 # zero-based
+        color = label_colors[cls]
+        conf = results[end-2, i]
+
+        x1 = round(Int, bbox[x1i]*w) + 1
+        y1 = round(Int, bbox[y1i]*h) + 1
+        x2 = round(Int, bbox[x2i]*w)
+        y2 = round(Int, bbox[y2i]*h)
+
+        # draw the rectangle
+        set_line_width(ctx, 1.0)
+        rectangle(ctx, x1, y1, x2 - x1, y2 - y1)
+        set_source_rgba(ctx, red(color), green(color), blue(color), opacity)
+        stroke(ctx)
+
+        # prepare label and position
+        label = "$(round(Int, conf*100))"
+        tx, ty = x1 + 1, y1 - 3.5  # 4px above the top‑left
+
+        # draw the text
+        set_font_face(ctx, "sans-serif $(fontsize)px")
+        move_to(ctx, tx, ty)
+        set_source_rgba(ctx, 0, 0, 0, opacity)
+        x_bearing, y_bearing, width, height, x_advance, y_advance = text_extents(ctx, label)
+        pad = 2.0
+        bx = tx + x_bearing - pad
+        by = ty + y_bearing - pad
+        bw = width + 2*pad
+        bh = height + 2*pad
+        save(ctx)
+        set_source_rgba(ctx, 1, 1, 1, opacity)
+        rectangle(ctx, bx, by, bw, bh)
+        fill(ctx)
+        restore(ctx)
+        set_source_rgba(ctx, 0, 0, 0, opacity)
+        move_to(ctx, tx, ty)
+        show_text(ctx, label)
+    end
+
+    # flush back into img and return
+    finish(surf)
+    img .= RGBA{N0f8}.(img_rgb24)
+    return img
+end
+
+# keep this for users that want to keep drawing boxes directly into non-color type images
+function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true, kwargs...)
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
@@ -66,7 +156,6 @@ function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArra
     end
     return img
 end
-
 
 """
     benchmark(;select = [1,2,6], reverseAfter:Bool=false)
