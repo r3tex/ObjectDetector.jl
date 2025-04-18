@@ -27,6 +27,11 @@ Create a dict copy of namesdict, for counting the occurances of each named objec
 """
 createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
 
+function gen_class_colors(model::YOLO.Yolo)
+    classes = get_cfg(model)[:output][1][:classes]
+    seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]
+    return Colors.distinguishable_colors(classes, seed; dropseed=true)
+end
 """
     draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
     draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
@@ -47,13 +52,13 @@ end
 function draw_boxes(img::Union{Matrix{RGBA{N0f8}}, Matrix{RGB{N0f8}}}, model::YOLO.Yolo, padding::AbstractArray, results; kwargs...)
     return draw_boxes!(copy(img), model, padding, results; kwargs...)
 end
-
 function draw_boxes!(img::Union{Matrix{RGBA{N0f8}},Matrix{RGB{N0f8}}}, model::YOLO.Yolo, padding::AbstractArray, results;
-    transpose=true, fontsize=12, opacity=0.8)
+    transpose=true, fontsize=12, opacity=0.8, label_colors = nothing, kwargs...)
 
-    classes = get_cfg(model)[:output][1][:classes]
-    seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]
-    label_colors = Colors.distinguishable_colors(classes, seed; dropseed=true)
+    if label_colors === nothing
+        label_colors = gen_class_colors(model)
+    end
+
     imgratio = size(img,2) / size(img,1)
     if transpose
         modelratio = get_cfg(model)[:width]  / get_cfg(model)[:height]
