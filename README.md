@@ -8,6 +8,8 @@ Other less standard models may work also.
 
 Note that v3+ models have result parity with [AlexeyAB/darknet](https://github.com/AlexeyAB/darknet), and are directly tested against [Darknet.jl](https://github.com/IanButterworth/Darknet.jl) (see tests)
 
+Training using ObjectDetector is currently unproven/untested.
+
 ## Installation
 
 Requires julia v1.10+. From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
