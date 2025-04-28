@@ -160,7 +160,7 @@ julia> ObjectDetector.benchmark()
 └──────────────────┴─────────┴───────────────┴──────────┴──────────────┴────────────────┴─────────────┘
 ```
 
-### A desktop with an AMD Ryzen 9 5950X & GTX 2060
+### A desktop with an AMD Ryzen 9 5950X & RTX 3080
 
 Without CUDA:
 ```
