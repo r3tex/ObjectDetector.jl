@@ -32,6 +32,34 @@ function gen_class_colors(model::YOLO.Yolo)
     seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]
     return Colors.distinguishable_colors(classes, seed; dropseed=true)
 end
+
+function _promote_to_n0f8(img)
+    if eltype(img) <: Union{RGB{N0f8}, RGBA{N0f8}}
+        return img
+    end
+    if eltype(img) <: RGBA
+        return RGBA{N0f8}.(img) # e.g. RGBA{Float32} → RGBA{N0f8}
+    elseif eltype(img) <: RGB
+        return RGB{N0f8}.(img) # e.g. RGB{Float32} → RGB{N0f8}
+    elseif eltype(img) <: Gray
+        return RGB{N0f8}.(img) # Gray{T} → RGB{N0f8}
+    end
+
+    if ndims(img) != 3
+        error("Unsupported image array: expected 3D channel array or colourant matrix.")
+    end
+
+    nchan = size(img, 3)
+    if nchan == 4
+        # (h,w,4) → colour dimension first → colour view
+        return colorview(RGBA{N0f8}, permutedims(img, (3,1,2)))
+    elseif nchan == 3
+        return colorview(RGB{N0f8},  permutedims(img, (3,1,2)))
+    else
+        error("Unsupported number of channels ($nchan). Expecting 3 (RGB) or 4 (RGBA).")
+    end
+end
+
 """
     draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
     draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
@@ -40,13 +68,7 @@ Draw class-colored boxes with conf labels on image for each BBOX result.
 With `draw_boxes!` if `img` is not a color image only boxes are drawn in black.
 """
 function draw_boxes(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; kwargs...)
-    if size(img, 3) == 4
-        imgc = colorview(RGBA{N0f8}, img[:, :, 1:3])
-    elseif eltype(img) <: Gray{N0f8}
-        imgc = RGB{N0f8}.(img)
-    else
-        imgc = colorview(RGBA{N0f8}, img)
-    end
+    imgc = _promote_to_n0f8(img)
     return draw_boxes!(copy(imgc), model, padding, results; kwargs...)
 end
 function draw_boxes(img::Union{Matrix{RGBA{N0f8}}, Matrix{RGB{N0f8}}}, model::YOLO.Yolo, padding::AbstractArray, results; kwargs...)
