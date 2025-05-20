@@ -180,3 +180,18 @@ end
         @test_throws AssertionError YOLO.v3_COCO(silent=false, w=511, h=384)
     end
 end
+
+@testset "draw_boxes" begin
+    yolomod = YOLO.v3_608_COCO(batch=1, silent=true)
+    batch = emptybatch(yolomod)
+    img = rand(Gray{Float32}, 100, 100)
+    batch[:,:,:,1], padding = prepare_image(img, yolomod)
+    res = yolomod(batch, detect_thresh=0.5, overlap_thresh=0.8)
+
+    @testset for t1 in (Gray, RGB, RGBA)
+        @testset for t2 in (Float32, N0f8)
+            img = rand(t1{t2}, 100, 100)
+            imgBoxes = draw_boxes(img, yolomod, padding, res)
+        end
+    end
+end
