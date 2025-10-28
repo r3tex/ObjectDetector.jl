@@ -22,9 +22,10 @@ UnsafeArrays = "c4a57d5a-5b31-53a6-b365-19f8c011fbd6"
 
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [extensions]
-CUDAExt = ["CUDA"]
+CUDAExt = ["CUDA", "cuDNN"]
 
 [compat]
 Adapt = "4.3.0"
@@ -47,6 +48,7 @@ PrettyTables = "2.0, 3"
 ReferenceTests = "0.10"
 TimerOutputs = "0.5.28"
 UnsafeArrays = "1.0.6"
+cuDNN = "1"
 julia = "1.10"
 
 [extras]
@@ -58,6 +60,7 @@ OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 ReferenceTests = "324d217c-45ce-50fc-942e-d289b448e8cf"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [targets]
-test = ["CUDA", "Darknet", "FileIO", "ImageIO", "OrderedCollections", "ReferenceTests", "Test", "Suppressor"]
+test = ["CUDA", "cuDNN", "Darknet", "FileIO", "ImageIO", "OrderedCollections", "ReferenceTests", "Test", "Suppressor"]
