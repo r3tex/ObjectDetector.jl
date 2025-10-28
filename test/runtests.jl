@@ -1,5 +1,4 @@
 using CUDA
-using cuDNN
 using Darknet
 using FileIO
 using Flux: cpu

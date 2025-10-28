@@ -19,7 +19,7 @@ pkg> add ObjectDetector
 ```
 
 As of ObjectDetector v0.3, if you want to use CUDA accelleration you will also need to
-add `CUDA` and `cuDNN` to your project and load both packages.
+add `CUDA` to your project and load the package.
 
 ## Usage
 
@@ -180,7 +180,7 @@ julia> ObjectDetector.benchmark()
 ```
 With CUDA
 ```
-julia> using CUDA, cuDNN
+julia> using CUDA
 
 julia> ObjectDetector.benchmark()
 ┌──────────────────┬─────────┬───────────────┬──────────┬──────────────┬────────────────┬─────────────┐
