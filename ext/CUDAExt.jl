@@ -80,7 +80,7 @@ end
 function kern_genbools(input::CuDeviceArray, output::CuDeviceArray)
     col = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
-    if col < cols && input[end-2, col] > Float32(0)
+    if col <= cols && input[end-2, col] > Float32(0)
         @inbounds output[col] = Int32(1)
     end
     return
