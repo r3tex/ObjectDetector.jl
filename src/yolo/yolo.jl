@@ -868,10 +868,11 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
                 weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
-                # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
+                # add 4 additional attributes for post-inference analysis. After findmax!
+                # below they hold: (unused), best class confidence (end-2),
+                # best class index (end-1), batch number (end)
                 weights = extend_for_attributes(weights, w, h, bo, ba)
 
-                weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
                 for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
                 weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
                 weights = reshape(weights, a+4, :) # reshape to attr, data
