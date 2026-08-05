@@ -402,13 +402,17 @@ mutable struct Yolo <: AbstractModel
                     @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
                     rethrow()
                 end
+                if bn
+                    # Fold batchnorm into the conv weights and bias (as darknet's
+                    # fuse_conv_batchnorm does): at inference BN is the affine map
+                    # y -> (y - mean) / sqrt(var + eps) * scale + bias, which per
+                    # output channel folds exactly into the conv kernel and bias.
+                    # This removes a full read+write pass over every conv output.
+                    bnscale = bw ./ sqrt.(bv .+ 1f-5)
+                    cw = cw .* reshape(bnscale, 1, 1, 1, :)
+                    cb = bb .- bm .* bnscale
+                end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                # push!(stack, x -> begin
-                #     _out = maybe_gpu(Flux.Conv(cw, cb; stride=stride, pad=pad, dilation=1))(x)
-                #     @info "Layer conv $(size(x)) => $(size(_out))"
-                #     return _out
-                # end)
-                bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
