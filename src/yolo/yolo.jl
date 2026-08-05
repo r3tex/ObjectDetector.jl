@@ -243,8 +243,9 @@ end
 """
     reorg(a, stride)
 
-Reorg (passthrough) layer as used by YOLOv2: decreases width and height by
-`stride` and increases channels by `stride^2`, keeping the total element count.
+Reorg (passthrough) layer as used by YOLOv2: decreases width and height by a
+factor of `stride` and increases channels by a factor of `stride^2`, keeping
+the total element count.
 
 This replicates darknet's legacy `[reorg]` layer exactly (`reorg_cpu` with
 `forward=0` as called by `forward_reorg_old_layer` for `reverse=0`), including
@@ -253,6 +254,7 @@ https://github.com/AlexeyAB/darknet/blob/9d40b619756be9521bc2ccd81808f502daaa3e9
 """
 function reorg(a::AbstractArray{<:Any,4}, stride::Integer)
     w, h, c, b = size(a)
+    @assert w % stride == 0 && h % stride == 0 && c % stride^2 == 0 "reorg with stride $stride requires width & height divisible by $stride and channels divisible by $(stride^2), got ($w, $h, $c)"
     in_c = c ÷ (stride * stride)
     x6 = reshape(a, stride, w, stride, h, in_c, b)
     o6 = permutedims(x6, (2, 4, 5, 1, 3, 6))
