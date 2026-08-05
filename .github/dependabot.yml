@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Keep [compat] entries in Project.toml up to date
+  - package-ecosystem: "julia"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Keep action versions in .github/workflows up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
