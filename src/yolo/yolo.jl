@@ -687,11 +687,47 @@ end
 
 """
     keepdetections(arr::AbstractArray)
+    keepdetections(outs::AbstractVector)
 
-Reduces the size of array and only keeps detections over threshold
+Reduces the size of array and only keeps detections over threshold.
+The vector form takes the per-output-head matrices and gathers the kept
+columns from all of them in one pass, without materializing their
+concatenation first.
 """
 function keepdetections(arr::AbstractArray)
     return arr[:, arr[end-2, :] .> 0]
+end
+
+function keepdetections(outs::AbstractVector)
+    if !all(fast_scalar_indexing, outs)
+        return keepdetections(cat(outs..., dims=2))
+    end
+    nfields = size(first(outs), 1)
+    n = sum(_count_kept, outs)
+    out = similar(first(outs), nfields, n)
+    i = 1
+    for o in outs
+        i = _copy_kept!(out, o, i)
+    end
+    return out
+end
+
+# function barriers: `outs` holds abstractly-typed elements
+function _count_kept(o::AbstractMatrix)
+    n = 0
+    @inbounds for j in axes(o, 2)
+        n += o[end-2, j] > 0f0
+    end
+    return n
+end
+function _copy_kept!(out::AbstractMatrix, o::AbstractMatrix, i::Int)
+    @inbounds for j in axes(o, 2)
+        if o[end-2, j] > 0f0
+            @views out[:, i] .= o[:, j]
+            i += 1
+        end
+    end
+    return i
 end
 
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
@@ -841,7 +877,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
 
             # PROCESSING ALL PREDICTIONS
             ############################
-            @timeit to "filter detections" batchout = cpu(keepdetections(cat(outweights..., dims=2)))
+            @timeit to "filter detections" batchout = cpu(keepdetections(outweights))
 
             if size(batchout, 2) < 2
                 ret = batchout # empty or singular output doesn't need further filtering
