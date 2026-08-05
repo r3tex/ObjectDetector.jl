@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Performance
+- Post-processing is significantly cheaper when many detections are kept. For `v3_416_COCO`
+  with all 10647 candidates retained (CPU, `detect_thresh=0`), post-processing allocations
+  drop from 78 MiB to 23 MiB and NMS time by ~20%: detections are grouped for NMS with one
+  global sort instead of per-batch/per-class scans, the NMS inner loop no longer allocates
+  per suppression round, output blocks are flattened with a single allocation, and the
+  per-head transforms run as fused in-place broadcasts.
+- NMS output columns are now ordered by batch, then ascending class id, then descending
+  score (classes were previously in first-appearance order).
+
 ### Bugfixes
 - Fix the reorg (passthrough) layer and the batchnorm read order for pre-0.2 darknet weight
   headers, and apply softmax (not sigmoid) to region-layer class scores when the cfg enables
