@@ -70,7 +70,7 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool; old_darknet::Bool=false)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
     function read_array(io::IOBuffer, n::Int)
         expected = n * sizeof(Float32)
         data = read(io, expected)
@@ -81,15 +81,10 @@ function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int
     end
     dummy = isnothing(bytes)
     if bn
-        if old_darknet
-            # PJReddie Darknet: scales, biases, means, vars
-            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
-            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
-        else
-            # AlexeyAB fork: biases, scales, means, vars
-            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
-            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
-        end
+        # Both PJReddie darknet and the AlexeyAB fork write, for every
+        # darknet version: biases, scales, means, vars (load_convolutional_weights)
+        bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
         bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
         bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
         cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
@@ -476,7 +471,7 @@ mutable struct Yolo <: AbstractModel
                 acts[cfg_idx] = block[:activation]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = try
-                    readweights(weightbytes, kern, ch[end], filters, bn; old_darknet)
+                    readweights(weightbytes, kern, ch[end], filters, bn)
                 catch
                     !silent && println()
                     @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
