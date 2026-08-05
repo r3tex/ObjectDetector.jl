@@ -164,6 +164,15 @@ end
 end
 
 @testset "Custom cfg's" begin
+    @testset "overridecfg! non-net layers" begin
+        cfgvec = ObjectDetector.YOLO.cfgread(joinpath(ObjectDetector.YOLO.models_dir(), "yolov3.cfg"))
+        ObjectDetector.YOLO.overridecfg!(cfgvec, [(:yolo, 3, :classes, 2), (:net, 1, :width, 512)])
+        yolos = [last(p) for p in cfgvec if first(p) === :yolo]
+        @test length(yolos) == 3
+        @test yolos[3][:classes] == 2
+        @test yolos[1][:classes] == 80
+        @test cfgvec[1][2][:width] == 512
+    end
     @testset "Valid non-square dimensions (512x384)" begin
         img = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])

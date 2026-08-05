@@ -269,7 +269,7 @@ i.e.
 function overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}},
                         cfgchanges::Vector{Tuple{Symbol,Int,Symbol,U}};
                         silent::Bool = false) where {T,U}
-    layers = map(x->first(x), cfgchanges)
+    layers = map(first, cfgvec)
     for cfgchange in cfgchanges
         layer_idxs = findall(layers .== cfgchange[1])
         length(layer_idxs) < cfgchange[2] && error("Number of $(cfgchange[1]) layers found ($(length(layer_idxs))) less than desired ($(cfgchange[2])).")
