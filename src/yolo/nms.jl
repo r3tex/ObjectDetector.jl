@@ -142,10 +142,17 @@ function nms!(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta:
                 scores[col] *= decay
                 dets[end-2, col] = scores[col]
             end
-            # move remaining candidates up, re-sorted by decayed score
-            rest = sort!(idxs[2:idx_len]; by = c -> scores[c], rev = true)
+            # compact survivors down one slot and swap the top decayed score to
+            # the front; only the per-round argmax matters for the keep order
+            best = 1
             @inbounds for j in 1:b2_len
-                idxs[j] = rest[j]
+                idxs[j] = idxs[j+1]
+                if scores[idxs[j]] > scores[idxs[best]]
+                    best = j
+                end
+            end
+            if best != 1
+                @inbounds idxs[1], idxs[best] = idxs[best], idxs[1]
             end
             write_idx = b2_len
         else
