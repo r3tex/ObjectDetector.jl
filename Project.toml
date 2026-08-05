@@ -3,6 +3,9 @@ uuid = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
 version = "1.1.2"
 authors = ["Robert Luciani"]
 
+[workspace]
+projects = ["test"]
+
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 AllocArrays = "5c00bae2-1499-4716-9206-27f63fd08a44"
@@ -38,34 +41,16 @@ BenchmarkTools = "0.4, 0.5, 0.6, 0.7, 1.0"
 CUDA = "4, 5, 6"
 Cairo = "1.1.1"
 Colors = "0.13.0"
-Darknet = "0.5.0"
-FileIO = "1"
 Flux = "0.12, 0.13, 0.14.1, 0.15, 0.16"
 Functors = "0.5"
 ImageCore = "0.8, 0.9, 0.10"
 ImageDraw = "0.2"
 ImageFiltering = "0.6, 0.7"
-ImageIO = "0.6"
 ImageTransformations = "0.8, 0.9, 0.10"
 LazyArtifacts = "1.3"
 PrecompileTools = "1"
 PrettyTables = "2.0, 3"
-ReferenceTests = "0.10"
 TimerOutputs = "0.5.28, 1"
 UnsafeArrays = "1.0.6"
 cuDNN = "1, 2, 3, 4, 5, 6"
 julia = "1.10"
-
-[extras]
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-Darknet = "e2912957-7d06-5673-a7d6-96d153624877"
-FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
-OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
-ReferenceTests = "324d217c-45ce-50fc-942e-d289b448e8cf"
-Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
-
-[targets]
-test = ["CUDA", "cuDNN", "Darknet", "FileIO", "ImageIO", "OrderedCollections", "ReferenceTests", "Test", "Suppressor"]
