@@ -23,7 +23,8 @@ function kern_clipdetect(input::CuDeviceArray, conf::Float32)
     idx = (blockIdx().x-1) * blockDim().x + threadIdx().x
     cols = gridDim().x
     if idx <= cols
-        @inbounds input[end-2, idx] = ifelse(input[end-2, idx] > conf, input[end-2, idx], Float32(0.0))
+        # keep values >= conf, matching the CPU clipdetect! boundary behavior
+        @inbounds input[end-2, idx] = ifelse(input[end-2, idx] >= conf, input[end-2, idx], Float32(0.0))
     end
     return
 end
@@ -37,9 +38,11 @@ end
 function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) where {T}
     if threadIdx().x == idend
         j = blockIdx().x
-        val = zero(T)
-        idx = zero(T)
-        for i in idst:idend
+        # initialize with the first candidate so the first maximum wins,
+        # matching CPU findmax semantics even when all scores are <= 0
+        val = input[idst, j]
+        idx = idst
+        for i in (idst+1):idend
             if input[i, j] > val
                 val = input[i, j]
                 idx = i
