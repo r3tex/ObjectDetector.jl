@@ -833,9 +833,15 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
                 end
 
-                # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
-                # preceding conv layer activation was NOT logistic (e.g., it was linear)
-                if out[:final_conv_activation] != "logistic"
+                if yolo.cfg[:laststage] === :region
+                    # The region layer (yolov2) applies logistic to objectness but
+                    # softmax over the class scores (darknet forward_region_layer)
+                    weights[:, :, 5, :, :] = σ.(weights[:, :, 5, :, :])
+                    expc = exp.(weights[:, :, 6:end, :, :] .- maximum(weights[:, :, 6:end, :, :], dims=3))
+                    weights[:, :, 6:end, :, :] = expc ./ sum(expc, dims=3)
+                elseif out[:final_conv_activation] != "logistic"
+                    # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
+                    # preceding conv layer activation was NOT logistic (e.g., it was linear)
                     weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
                 end
 
