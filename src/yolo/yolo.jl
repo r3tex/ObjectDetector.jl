@@ -767,8 +767,9 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     # (forward_region_layer)
                     weights[:, :, 5, :, :] = σ.(weights[:, :, 5, :, :])
                     if get(yolo.cfg[:output][outnr], :softmax, 0) != 0
-                        expc = exp.(weights[:, :, 6:end, :, :] .- maximum(weights[:, :, 6:end, :, :], dims=3))
-                        weights[:, :, 6:end, :, :] = expc ./ sum(expc, dims=3)
+                        cls = weights[:, :, 6:end, :, :] # a view, via the enclosing @views
+                        cls .= exp.(cls .- maximum(cls, dims=3))
+                        cls ./= sum(cls, dims=3)
                     end
                 elseif out[:final_conv_activation] != "logistic"
                     # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
