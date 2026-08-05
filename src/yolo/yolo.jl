@@ -676,7 +676,9 @@ Findmax, get the class with highest confidence and class number out.
 """
 function findmax!(input::AbstractArray{T}) where {T}
     @inbounds for i in axes(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(@view input[6:end-3, i])
+        # class scores live in rows 6:end-4; rows end-3:end are the appended
+        # scratch attributes and must not participate in the max
+        input[end-2, i], input[end-1, i] = findmax(@view input[6:end-4, i])
     end
 end
 

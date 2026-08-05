@@ -32,7 +32,9 @@ end
 
 function findmax!(input::CuArray)
     rows, cols = size(input)
-    idst, idend = 6, rows - 3
+    # class scores live in rows 6:end-4; rows end-3:end are the appended
+    # scratch attributes and must not participate in the max
+    idst, idend = 6, rows - 4
     @cuda blocks=cols threads=rows kern_findmax!(input, idst, idend)
 end
 function kern_findmax!(input::CuDeviceMatrix{T}, idst::Integer, idend::Integer) where {T}
