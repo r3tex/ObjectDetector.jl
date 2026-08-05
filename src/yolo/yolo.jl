@@ -700,6 +700,29 @@ function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     return cat(weights, x, dims = 3)
 end
 
+fast_scalar_indexing(::AbstractArray) = true # CPU-resident arrays; overridden for CuArray in CUDAExt
+
+"""
+    flatten_with_attributes(weights, w, h, a, bo, ba)
+
+Permute a (w, h, a, bo, ba) output block to attribute-major order and append 4
+zero-initialized attribute rows, returning an (a+4, w*h*bo*ba) matrix.
+Equivalent to extend_for_attributes + permutedims + reshape, but with a single
+allocation on the CPU fast path.
+"""
+function flatten_with_attributes(weights::AbstractArray, w, h, a, bo, ba)
+    if fast_scalar_indexing(weights)
+        dst = similar(weights, Float32, a+4, w, h, bo, ba)
+        permutedims!(view(dst, 1:a, :, :, :, :), weights, (3, 1, 2, 4, 5))
+        fill!(view(dst, a+1:a+4, :, :, :, :), 0f0)
+        return reshape(dst, a+4, :)
+    else
+        # GPU path: dense cat + permutedims, avoiding scalar indexing
+        ext = extend_for_attributes(weights, w, h, bo, ba)
+        return reshape(permutedims(ext, (3, 1, 2, 4, 5)), a+4, :)
+    end
+end
+
 check_w_type(arr::AllocArray) = check_w_type(arr.arr)
 check_w_type(::UnsafeArray) = throw(ArgumentError("Internal error: UnsafeArray has leaked into internal buffer"))
 check_w_type(::Any) = nothing
@@ -803,11 +826,12 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 # add 4 additional attributes for post-inference analysis. After findmax!
                 # below they hold: (unused), best class confidence (end-2),
                 # best class index (end-1), batch number (end)
-                weights = extend_for_attributes(weights, w, h, bo, ba)
+                weights = flatten_with_attributes(weights, w, h, a, bo, ba)
 
-                for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-                weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
-                weights = reshape(weights, a+4, :) # reshape to attr, data
+                npercol = w * h * bo # columns are ordered (w, h, bo, ba), so batches are contiguous
+                for batch in 1:ba
+                    weights[end, (batch-1)*npercol+1:batch*npercol] .= batch # write batchnumber to the last attribute row
+                end
 
                 detect_thresh = Float32(@something detect_thresh out[:truth_thresh])
                 findmax!(weights)
