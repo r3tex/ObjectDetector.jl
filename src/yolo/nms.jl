@@ -82,7 +82,10 @@ Keyword Arguments:
     - `:default` (default): traditional hard-threshold NMS
     - `:greedynms` score-decay using IoU penalty (`score *= 1 - IoU`) with fixed beta of 0.6
     - `:diounms`: score-decay using IoU penalty (`score *= 1 - IoU`)
-    - `:soft`: Soft-NMS using exponential decay (`score *= exp(-IoU^2 / beta)`)
+    - `:soft`: Soft-NMS using exponential decay (`score *= exp(-IoU^2 / beta)`).
+      Keeps all boxes; decayed scores are written back into row `end-2` of
+      `dets` (i.e. `dets` is mutated), and pruning is left to the caller's
+      score threshold.
 - `beta` (`Float32`): smoothing factor for soft-NMS (default `0.6`)
 
 Returns:
@@ -128,21 +131,22 @@ function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::
                     idxs[write_idx] = idxs[j+1]
                 end
             end
-        elseif kind === :soft # untested
+        elseif kind === :soft
+            # Soft-NMS (Bodla et al. 2017), gaussian variant: no box is removed;
+            # overlapping boxes have their scores decayed (written back into
+            # `dets`) and final pruning is left to the caller's score threshold.
             @inbounds for j in 1:b2_len
+                col = idxs[j+1]
                 decay = exp(-(ious[j]^2) / beta)
-                scores[idxs[j+1]] *= decay
+                scores[col] *= decay
+                dets[end-2, col] = scores[col]
             end
-            @inbounds for j in 2:idx_len
-                key = idxs[j]
-                k = j - 1
-                while k >= 1 && scores[idxs[k]] < scores[key]
-                    idxs[k + 1] = idxs[k]
-                    k -= 1
-                end
-                idxs[k + 1] = key
+            # move remaining candidates up, re-sorted by decayed score
+            rest = sort!(idxs[2:idx_len]; by = c -> scores[c], rev = true)
+            @inbounds for j in 1:b2_len
+                idxs[j] = rest[j]
             end
-            write_idx = idx_len - 1
+            write_idx = b2_len
         else
             error("Unknown NMS kind: $kind")
         end
