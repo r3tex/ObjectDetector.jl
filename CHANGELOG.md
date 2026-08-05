@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Performance
+- Batchnorm is now folded into the conv weights at load time (as darknet's
+  `fuse_conv_batchnorm` does), removing the BatchNorm pass entirely: ~4-9% faster forward
+  pass on CPU depending on the model. Outputs shift only by float rounding (< 1e-6).
 - Post-processing is significantly cheaper when many detections are kept. For `v3_416_COCO`
   with all 10647 candidates retained (CPU, `detect_thresh=0`), post-processing allocations
   drop from 78 MiB to 23 MiB and NMS time by ~20%: detections are grouped for NMS with one

@@ -58,6 +58,25 @@ Also, non-square models can be loaded, but care should be taken to ensure that e
 dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32).
 
 
+### CPU performance tips
+
+The forward pass on CPU is dominated by BLAS matrix multiplies, so the BLAS
+backend matters more than anything else:
+
+- **Apple silicon**: load [AppleAccelerate.jl](https://github.com/JuliaLinearAlgebra/AppleAccelerate.jl)
+  before running. Apple's AMX-backed sgemm is substantially faster than the
+  default OpenBLAS (~35% faster end-to-end for `v3_416_COCO` on an M2 Pro):
+  ```julia
+  using AppleAccelerate, ObjectDetector
+  ```
+- **Intel CPUs**: [MKL.jl](https://github.com/JuliaLinearAlgebra/MKL.jl) typically
+  plays the same role.
+- BLAS threading (not Julia's `-t`) controls conv parallelism; the default
+  thread count is usually right, but `LinearAlgebra.BLAS.set_num_threads`
+  is the knob if you need to tune it.
+- For throughput, prefer batching images (`YOLO.v3_416_COCO(batch=N)`) over
+  repeated single-image calls: larger batches use the hardware more efficiently.
+
 ### CPU allocations management
 
 On CPU an `AllocArrays` & `Adapt` - based allocator is used to reduce allocations.
