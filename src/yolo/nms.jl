@@ -156,11 +156,16 @@ function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::
 end
 
 """
-    perform_detection_nms(batchout, overlap_thresh, batchsize)
+    perform_detection_nms(batchout, overlap_thresh, batchsize; kind, beta, detect_thresh)
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
 group them by class, sort each group by the end-2 column (class confidence score) descending, and
 run NMS to remove duplicates using bboxiou and overlap_thresh.
+
+`detect_thresh` re-applies the caller's score threshold to the kept boxes.
+This only matters for `kind = :soft`, where scores are decayed during NMS and
+boxes that fall below the original detection threshold must be pruned (the
+other kinds only ever return boxes that already passed the threshold).
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
 
@@ -175,7 +180,7 @@ batchout rows:
 - end-1: the class index
 - The last row is the batch index
 """
-function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0)
+function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0, detect_thresh::Float32=0f0)
     output = similar(batchout)
     i = 1  # index for writing into `output`
 
@@ -211,6 +216,7 @@ function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::S
             keep = nms(sorted_dets, overlap_thresh; kind, beta)
 
             @inbounds for k in keep
+                sorted_dets[end-2, k] < detect_thresh && continue # soft-NMS may have decayed the score below threshold
                 output[:, i] = sorted_dets[:, k]
                 i += 1
             end

@@ -818,7 +818,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     overlap_thresh = Float32(@something overlap_thresh yolo.out[1][:ignore_thresh])
                     nms_kind = yolo.out[1][:nms_kind]
                     beta_nms = yolo.out[1][:beta_nms]
-                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize; kind=nms_kind, beta=beta_nms)
+                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize; kind=nms_kind, beta=beta_nms, detect_thresh=Float32(detect_thresh))
                 end
             end
         end

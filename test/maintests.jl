@@ -153,6 +153,20 @@ end
     end
 end
 
+@testset "NMS" begin
+    # two heavily-overlapping boxes and one distinct box, all one class
+    # rows: x1, y1, x2, y2, objectness, class score, class id, batch id
+    dets = Float32[0.1 0.12 0.6; 0.1 0.12 0.6; 0.3 0.32 0.8; 0.3 0.32 0.8;
+                   1.0 1.0 1.0; 0.9 0.8 0.7; 2.0 2.0 2.0; 1.0 1.0 1.0]
+    keep = ObjectDetector.YOLO.nms(copy(dets), 0.5f0; kind=:soft, beta=0.6f0)
+    @test sort(keep) == [1, 2, 3] # soft-NMS keeps all boxes, only decays scores
+    out = ObjectDetector.YOLO.perform_detection_nms(copy(dets), 0.5f0, 1; kind=:soft, beta=0.6f0, detect_thresh=0.5f0)
+    @test size(out, 2) == 2 # the overlapped box decayed below detect_thresh and is pruned
+    @test out[end-2, :] ≈ Float32[0.9, 0.7]
+    out_def = ObjectDetector.YOLO.perform_detection_nms(copy(dets), 0.5f0, 1; kind=:default)
+    @test size(out_def, 2) == 2 # hard NMS suppresses the overlapped box outright
+end
+
 @testset "Custom cfg's" begin
     @testset "overridecfg! non-net layers" begin
         cfgvec = ObjectDetector.YOLO.cfgread(joinpath(ObjectDetector.YOLO.models_dir(), "yolov3.cfg"))
