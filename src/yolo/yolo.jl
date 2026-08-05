@@ -248,14 +248,20 @@ end
 """
     reorg(a, stride)
 
-Reshapes feature map - decreases size and increases number of channels, without
-changing elements. stride=2 mean that width and height will be decreased by 2
-times, and number of channels will be increased by 2x2 = 4 times, so the total
-number of element will still the same: width_old*height_old*channels_old = width_new*height_new*channels_new
+Reorg (passthrough) layer as used by YOLOv2: decreases width and height by
+`stride` and increases channels by `stride^2`, keeping the total element count.
+
+This replicates darknet's legacy `[reorg]` layer exactly (`reorg_cpu` with
+`forward=0` as called by `forward_reorg_old_layer` for `reverse=0`), including
+its idiosyncratic element ordering, since pretrained weights depend on it. See
+https://github.com/AlexeyAB/darknet/blob/9d40b619756be9521bc2ccd81808f502daaa3e9a/src/blas.c#L10
 """
-function reorg(a, stride)
-    w, h, c = size(a)
-    return reshape(a, (w // stride, h // stride, c*(stride^2)))
+function reorg(a::AbstractArray{<:Any,4}, stride::Integer)
+    w, h, c, b = size(a)
+    in_c = c ÷ (stride * stride)
+    x6 = reshape(a, stride, w, stride, h, in_c, b)
+    o6 = permutedims(x6, (2, 4, 5, 1, 3, 6))
+    return reshape(o6, w ÷ stride, h ÷ stride, c * stride * stride, b)
 end
 
 """
@@ -498,8 +504,8 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["($cfg_idx) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :reorg
                 stride = block[:stride]
-                push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
-                push!(ch, ch[end])
+                push!(fn, _reorg(stride)) # reorg to (w/stride, h/stride, c*stride^2)
+                push!(ch, ch[end] * stride^2)
                 !silent && prettyprint(["($cfg_idx) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :maxpool
                 siz = block[:size]
