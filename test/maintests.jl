@@ -158,7 +158,7 @@ end
     # rows: x1, y1, x2, y2, objectness, class score, class id, batch id
     dets = Float32[0.1 0.12 0.6; 0.1 0.12 0.6; 0.3 0.32 0.8; 0.3 0.32 0.8;
                    1.0 1.0 1.0; 0.9 0.8 0.7; 2.0 2.0 2.0; 1.0 1.0 1.0]
-    keep = ObjectDetector.YOLO.nms(copy(dets), 0.5f0; kind=:soft, beta=0.6f0)
+    keep = ObjectDetector.YOLO.nms!(copy(dets), 0.5f0; kind=:soft, beta=0.6f0)
     @test sort(keep) == [1, 2, 3] # soft-NMS keeps all boxes, only decays scores
     out = ObjectDetector.YOLO.perform_detection_nms(copy(dets), 0.5f0, 1; kind=:soft, beta=0.6f0, detect_thresh=0.5f0)
     @test size(out, 2) == 2 # the overlapped box decayed below detect_thresh and is pruned
