@@ -303,91 +303,14 @@ _route(val, channels) = x -> val[:, :, channels, :]
 _add(val, act) = x -> broadcast!((a, b) -> act(a + b), x, x, val)
 _cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 
-flux_maxpool = true
-@static if flux_maxpool
-    ## Flux maxpool approach
-    function _maxpool(siz, stride)
-        # For a 2x2 pool, use explicit padding to preserve dimensions.
-        pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
-        return x -> maxpool(x; siz, stride, pad)
-    end
-    function maxpool(x; siz, stride, pad)
-        return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
-    end
-else
-    ## Direct copy of darknet maxpool approach
-    function _maxpool(siz, stride)
-        pad = if siz == 2 && stride == 1
-            # For a 2×2 pool with stride=1, pad asymmetrically so that
-            # for an odd input (e.g. 13) the effective input becomes 14,
-            # producing an output of 13.
-            1
-        elseif siz == 2 && stride == 2
-            0
-        else
-            div(siz, 2)
-        end
-        return x -> darknet_maxpool_layer(x, siz, (stride, stride), pad)
-    end
-    function maxpool(x::AbstractArray{Float32,4},
-        siz::Int,
-        stride::Tuple{Int,Int},
-        pad::Int;
-        return_indexes::Bool=false)
-        # x: input array with dimensions (H, W, C, N)
-        # siz: pooling window size (e.g., 2)
-        # stride: (stride_y, stride_x)
-        # pad: total padding (as in Darknet, where often for 2×2, stride=1, pad is set so that the
-        #      effective input is increased asymetrically)
-        # return_indexes: if true, also return the indexes of the max values.
-        H, W, C, N = size(x)
-        stride_y, stride_x = stride
-        out_h = div(H + pad - siz, stride_y) + 1
-        out_w = div(W + pad - siz, stride_x) + 1
-
-        # Allocate output; note we set the pool default to -Inf
-        y = fill(-Inf32, out_h, out_w, C, N)
-        idx = return_indexes ? similar(y, Int) : nothing
-
-        # Compute offsets as in Darknet:
-        #   h_offset = -l.pad/2,  w_offset = -l.pad/2.
-        h_offset = -div(pad, 2)
-        w_offset = -div(pad, 2)
-
-        # Loop over batch, channel, and output spatial locations.
-        # In Darknet, the loops are ordered as: batch, channel, out_h, out_w
-        for b in 1:N
-            for k in 1:C
-                for i in 1:out_h
-                    for j in 1:out_w
-                        max_val = -Inf32
-                        max_index = -1  # default (could be left as -1 if no valid element is found)
-                        # Loop over the pooling window:
-                        for n in 0:(siz-1)
-                            for m in 0:(siz-1)
-                                # Compute current position, adjusting for 1-indexed Julia arrays:
-                                cur_h = h_offset + (i - 1) * stride_y + n + 1
-                                cur_w = w_offset + (j - 1) * stride_x + m + 1
-                                if cur_h >= 1 && cur_h <= H && cur_w >= 1 && cur_w <= W
-                                    val = x[cur_h, cur_w, k, b]
-                                    if val > max_val
-                                        max_val = val
-                                        # Save linear index (or you could choose to store a CartesianIndex)
-                                        max_index = LinearIndices(x)[CartesianIndex(cur_h, cur_w, k, b)]
-                                    end
-                                end
-                            end
-                        end
-                        y[i, j, k, b] = max_val
-                        if return_indexes
-                            idx[i, j, k, b] = max_index
-                        end
-                    end
-                end
-            end
-        end
-        return return_indexes ? (y, idx) : y
-    end
+## Flux maxpool approach
+function _maxpool(siz, stride)
+    # For a 2x2 pool, use explicit padding to preserve dimensions.
+    pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
+    return x -> maxpool(x; siz, stride, pad)
+end
+function maxpool(x; siz, stride, pad)
+    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
 end
 
 ########################################################
