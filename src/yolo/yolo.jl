@@ -752,12 +752,12 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                         delta = Float32(yolo.cfg[:output][outnr][:max_delta])
                         clamp!(weights[:, :, 1:2, :, :], -delta, delta)
                     end
-                    weights[:, :, 1:2, :, :] = (weights[:, :, 1:2, :, :] .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
-                    weights[:, :, 3:4, :, :] = (weights[:, :, 3:4, :, :] .* sxy).^2 .* out[:anchor]
+                    weights[:, :, 1:2, :, :] .= (weights[:, :, 1:2, :, :] .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] .= (weights[:, :, 3:4, :, :] .* sxy).^2 .* out[:anchor]
                 else
                     # Classic behavior
-                    weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
-                    weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+                    weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
                 end
 
                 if yolo.cfg[:laststage] === :region
@@ -765,7 +765,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     # softmax over the class scores only when the cfg sets softmax=1;
                     # with softmax=0 darknet leaves the class scores linear
                     # (forward_region_layer)
-                    weights[:, :, 5, :, :] = σ.(weights[:, :, 5, :, :])
+                    weights[:, :, 5, :, :] .= σ.(weights[:, :, 5, :, :])
                     if get(yolo.cfg[:output][outnr], :softmax, 0) != 0
                         cls = weights[:, :, 6:end, :, :] # a view, via the enclosing @views
                         cls .= exp.(cls .- maximum(cls, dims=3))
@@ -774,31 +774,31 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 elseif out[:final_conv_activation] != "logistic"
                     # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
                     # preceding conv layer activation was NOT logistic (e.g., it was linear)
-                    weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                    weights[:, :, 5:end, :, :] .= σ.(weights[:, :, 5:end, :, :])
                 end
 
                 if conf_fix
                     # post-sigmoid class confidence scores should be multiplied by the post-sigmoid box confidence score
                     # see https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/public/yolo-v3-tiny-tf/README.md#original-model-1
-                    weights[:, :, 6:end, :, :] = weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
+                    weights[:, :, 6:end, :, :] .= weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
                 end
 
                 # Convert to image width & height scale (0.0-1.0)
-                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
-                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+                weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] ./ size(img, 1) #x
+                weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] ./ size(img, 2) #y
                 if yolo.cfg[:laststage] === :region # indicates yolov2
                     cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
-                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
-                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+                    weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ size(img, 1)) .* cellsize_x #w
+                    weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ size(img, 2)) .* cellsize_y #h
                 else
-                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
-                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+                    weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+                    weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ size(img, 2)) #h
                 end
 
-                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-                weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-                weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+                weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5f0) #x1
+                weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5f0) #y1
+                weights[:, :, 3, :, :] .= weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+                weights[:, :, 4, :, :] .= weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
                 # add 4 additional attributes for post-inference analysis. After findmax!
                 # below they hold: (unused), best class confidence (end-2),
