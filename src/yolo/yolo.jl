@@ -51,7 +51,9 @@ end
 Read config file and return an array of settings
 """
 function cfgread(file::String)
-    data = reverse(filter(d -> length(d) > 0 && d[1] != '#', readlines(file)))
+    # strip comments (whole-line and trailing) and whitespace-only lines
+    lines = map(l -> String(strip(first(split(l, '#')))), readlines(file))
+    data = reverse(filter(!isempty, lines))
     out = Array{Pair{Symbol, Dict{Symbol, Any}}, 1}(undef, 0)
     settings = Dict{Symbol, Any}()
     for row in data
