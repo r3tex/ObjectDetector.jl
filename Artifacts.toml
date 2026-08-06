@@ -46,6 +46,38 @@ lazy = true
     sha256 = "9e8ef718f074b15bf8b49b1750764a737367ba08a2422ea51fc67e687bba9c98"
     url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights2/yolov4-COCO.tar.gz"
 
+[yolov4-csp-COCO]
+git-tree-sha1 = "0ed4c06e067b130a78eab84aaff62621f9b08282"
+lazy = true
+
+    [[yolov4-csp-COCO.download]]
+    sha256 = "e6a6ce7551b94b3ff4f493e19670c16a1c766578b16e56d2008c6cfc7c8bec02"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov4-csp-COCO.tar.gz"
+
+[yolov4-csp-x-swish-COCO]
+git-tree-sha1 = "842cc97e64259829d7c23398ae135ab8e4fa58f1"
+lazy = true
+
+    [[yolov4-csp-x-swish-COCO.download]]
+    sha256 = "8a6c602e6c6c862ba82980c9552339fc665fc11943a4536df6456009472ededa"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov4-csp-x-swish-COCO.tar.gz"
+
+[yolov4-p5-COCO]
+git-tree-sha1 = "9d783cbaf16302afb118956b79491b23553e71f2"
+lazy = true
+
+    [[yolov4-p5-COCO.download]]
+    sha256 = "3c158eafa4719f0e502bbc5f710084d470b6af32c6fee59344c625b450acee79"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov4-p5-COCO.tar.gz"
+
+[yolov4-p6-COCO]
+git-tree-sha1 = "cdee6a06e053e68aa606e5761312667ac778a8d5"
+lazy = true
+
+    [[yolov4-p6-COCO.download]]
+    sha256 = "7ae1725e5b0d11ee09ef4cc40dcd4e8a7223302a42d3802df0ec28e46a235e3d"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov4-p6-COCO.tar.gz"
+
 [yolov4-tiny-COCO]
 git-tree-sha1 = "ddad97b7d60da0cffd2b12003a5c42e88fcaedae"
 lazy = true
@@ -53,6 +85,14 @@ lazy = true
     [[yolov4-tiny-COCO.download]]
     sha256 = "6e96d427f769d2dd2f1aadf96f6b8d8e8e19fc5a6e8e81ffa4dc8bda9c7d6ea3"
     url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights2/yolov4-tiny-COCO.tar.gz"
+
+[yolov4x-mish-COCO]
+git-tree-sha1 = "b04bfb646371d6e2eefd737b4154bca45b096ccd"
+lazy = true
+
+    [[yolov4x-mish-COCO.download]]
+    sha256 = "3bdd747199ddf911af9f65ea3aae9f361ee17835803ca110357e0c7160f8f685"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov4x-mish-COCO.tar.gz"
 
 [yolov7-COCO]
 git-tree-sha1 = "817fb08f81f72429d84a08d552d54d8195d937de"
@@ -69,3 +109,11 @@ lazy = true
     [[yolov7-tiny-COCO.download]]
     sha256 = "d46863dfebb4b6008eb91f291ba59281bfd6d256c828a33b825969695abcea1a"
     url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights2/yolov7-tiny-COCO.tar.gz"
+
+[yolov7x-COCO]
+git-tree-sha1 = "57a1c0aa23f2bf5ef80d46f1eeb965ccedfc61f5"
+lazy = true
+
+    [[yolov7x-COCO.download]]
+    sha256 = "1acd8798e8eaa4836c403501315084ba0a0d9f107355506186ed295a249bebac"
+    url = "https://github.com/r3tex/ObjectDetector.jl/releases/download/weights/yolov7x-COCO.tar.gz"
