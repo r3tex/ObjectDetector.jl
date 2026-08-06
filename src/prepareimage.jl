@@ -124,7 +124,7 @@ function prepare_image!(dest_arr::AbstractArray{Float32}, img::AbstractArray{Flo
     elseif ndims(img) == 3 && size(img)[[2,1,3]] == size(dest_arr)
         return (maybe_gpu(PermutedDimsArray(img, [2,1,3])), [0,0,0,0])
     elseif ndims(img) == 2 && size(img)[[2,1]] == size(dest_arr)[1:2]
-        return (maybe_gpu(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img, 1), 1)))
+        return (maybe_gpu(repeat(reshape(PermutedDimsArray(img, [2,1]), size(img,2), size(img,1), 1), outer=[1,1,size(dest_arr,3)])), [0,0,0,0])
     elseif ndims(img) == 2
         return prepare_image!(dest_arr, colorview(Gray, img), kern; use_gpu)
     elseif size(img, 1) == 1

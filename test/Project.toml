@@ -1,0 +1,20 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Darknet = "e2912957-7d06-5673-a7d6-96d153624877"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
+ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
+ObjectDetector = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
+ReferenceTests = "324d217c-45ce-50fc-942e-d289b448e8cf"
+Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
+
+[compat]
+Darknet = "0.5.0"
+FileIO = "1"
+ImageIO = "0.6"
+ReferenceTests = "0.10"

@@ -66,10 +66,11 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false, beta 
 end
 
 """
-    nms(dets, iou_thresh; kind=:default, beta=0.6f0)
+    nms!(dets, iou_thresh; kind=:default, beta=0.6f0)
 
 Performs Non-Maximum Suppression (NMS) on a set of detection boxes `dets`, returning the indices
-of boxes to keep. This function supports multiple NMS strategies:
+of boxes to keep. For `kind = :soft`, `dets` is mutated: decayed scores are written back into
+row `end-2`. This function supports multiple NMS strategies:
 
 Arguments:
 - `dets`: A matrix of shape (≥5, N), where each column represents a detection.
@@ -82,7 +83,10 @@ Keyword Arguments:
     - `:default` (default): traditional hard-threshold NMS
     - `:greedynms` score-decay using IoU penalty (`score *= 1 - IoU`) with fixed beta of 0.6
     - `:diounms`: score-decay using IoU penalty (`score *= 1 - IoU`)
-    - `:soft`: Soft-NMS using exponential decay (`score *= exp(-IoU^2 / beta)`)
+    - `:soft`: Soft-NMS using exponential decay (`score *= exp(-IoU^2 / beta)`).
+      Keeps all boxes; decayed scores are written back into row `end-2` of
+      `dets` (i.e. `dets` is mutated), and pruning is left to the caller's
+      score threshold.
 - `beta` (`Float32`): smoothing factor for soft-NMS (default `0.6`)
 
 Returns:
@@ -90,7 +94,7 @@ Returns:
 
 See https://github.com/AlexeyAB/darknet/blob/9d40b619756be9521bc2ccd81808f502daaa3e9a/src/box.c#L195
 """
-function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::T = T(0.6)) where T
+function nms!(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::T = T(0.6)) where T
     N = size(dets, 2)
     idxs = similar(dets, Int, N)
     @inbounds for j in 1:N
@@ -128,21 +132,29 @@ function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::
                     idxs[write_idx] = idxs[j+1]
                 end
             end
-        elseif kind === :soft # untested
+        elseif kind === :soft
+            # Soft-NMS (Bodla et al. 2017), gaussian variant: no box is removed;
+            # overlapping boxes have their scores decayed (written back into
+            # `dets`) and final pruning is left to the caller's score threshold.
             @inbounds for j in 1:b2_len
+                col = idxs[j+1]
                 decay = exp(-(ious[j]^2) / beta)
-                scores[idxs[j+1]] *= decay
+                scores[col] *= decay
+                dets[end-2, col] = scores[col]
             end
-            @inbounds for j in 2:idx_len
-                key = idxs[j]
-                k = j - 1
-                while k >= 1 && scores[idxs[k]] < scores[key]
-                    idxs[k + 1] = idxs[k]
-                    k -= 1
+            # compact survivors down one slot and swap the top decayed score to
+            # the front; only the per-round argmax matters for the keep order
+            best = 1
+            @inbounds for j in 1:b2_len
+                idxs[j] = idxs[j+1]
+                if scores[idxs[j]] > scores[idxs[best]]
+                    best = j
                 end
-                idxs[k + 1] = key
             end
-            write_idx = idx_len - 1
+            if best != 1
+                @inbounds idxs[1], idxs[best] = idxs[best], idxs[1]
+            end
+            write_idx = b2_len
         else
             error("Unknown NMS kind: $kind")
         end
@@ -152,11 +164,16 @@ function nms(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta::
 end
 
 """
-    perform_detection_nms(batchout, overlap_thresh, batchsize)
+    perform_detection_nms(batchout, overlap_thresh, batchsize; kind, beta, detect_thresh)
 
 For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
 group them by class, sort each group by the end-2 column (class confidence score) descending, and
 run NMS to remove duplicates using bboxiou and overlap_thresh.
+
+`detect_thresh` re-applies the caller's score threshold to the kept boxes.
+This only matters for `kind = :soft`, where scores are decayed during NMS and
+boxes that fall below the original detection threshold must be pruned (the
+other kinds only ever return boxes that already passed the threshold).
 
 Returns a Vector of detection matrices, each of size (num_fields, kept_boxes).
 
@@ -171,7 +188,7 @@ batchout rows:
 - end-1: the class index
 - The last row is the batch index
 """
-function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0)
+function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0, detect_thresh::Float32=0f0)
     output = similar(batchout)
     i = 1  # index for writing into `output`
 
@@ -204,9 +221,10 @@ function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::S
             # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
             sorted_dets = dets[:, sorted_idx]
 
-            keep = nms(sorted_dets, overlap_thresh; kind, beta)
+            keep = nms!(sorted_dets, overlap_thresh; kind, beta)
 
             @inbounds for k in keep
+                sorted_dets[end-2, k] < detect_thresh && continue # soft-NMS may have decayed the score below threshold
                 output[:, i] = sorted_dets[:, k]
                 i += 1
             end

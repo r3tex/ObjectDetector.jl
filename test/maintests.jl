@@ -4,31 +4,18 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 
 psnr_thresh = 35.0
 
+# Resolve artifacts through the package itself: `artifact""` cannot be used in
+# test files because the search for Artifacts.toml stops at test/Project.toml
 @testset "Download all artifacts" begin
-    # artifact"yolov2-COCO"         # broken, see below
-    # artifact"yolov2-tiny-COCO"    # broken, see below
-    artifact"yolov3-COCO"
-    artifact"yolov3-spp-COCO"
-    artifact"yolov3-tiny-COCO"
-    artifact"yolov4-COCO"
-    artifact"yolov4-tiny-COCO"
-    artifact"yolov7-COCO"
-    artifact"yolov7-tiny-COCO"
+    for (name, files) in sort(collect(YOLO.YOLO_MODELS), by = first)
+        cfgfile, weightsfile = files()
+        @test isfile(weightsfile)
+    end
 end
 
 Darknet.download_defaults()
 
-const skip_models = (
-    "v2_COCO",      # TODO: Not all weights are read during load: Read 196856372 bytes. Filesize 203934260 bytes
-    "v2_tiny_COCO", # TODO: Figure out why results differ
-    # "v3_COCO",
-    # "v3_tiny_COCO",
-    # "v3_spp_COCO",
-    # "v4_COCO",
-    # "v4_tiny_COCO",
-    # "v7_COCO",
-    # "v7_tiny_COCO",
-)
+const skip_models = ()
 
 const testimages = ["dog-cycle-car", "dog-cycle-car_nonsquare"]
 const namesfile = joinpath(ObjectDetector.YOLO.models_dir(), "coco.names")
@@ -163,7 +150,30 @@ end
     end
 end
 
+@testset "NMS" begin
+    # two heavily-overlapping boxes and one distinct box, all one class
+    # rows: x1, y1, x2, y2, objectness, class score, class id, batch id
+    dets = Float32[0.1 0.12 0.6; 0.1 0.12 0.6; 0.3 0.32 0.8; 0.3 0.32 0.8;
+                   1.0 1.0 1.0; 0.9 0.8 0.7; 2.0 2.0 2.0; 1.0 1.0 1.0]
+    keep = ObjectDetector.YOLO.nms!(copy(dets), 0.5f0; kind=:soft, beta=0.6f0)
+    @test sort(keep) == [1, 2, 3] # soft-NMS keeps all boxes, only decays scores
+    out = ObjectDetector.YOLO.perform_detection_nms(copy(dets), 0.5f0, 1; kind=:soft, beta=0.6f0, detect_thresh=0.5f0)
+    @test size(out, 2) == 2 # the overlapped box decayed below detect_thresh and is pruned
+    @test out[end-2, :] ≈ Float32[0.9, 0.7]
+    out_def = ObjectDetector.YOLO.perform_detection_nms(copy(dets), 0.5f0, 1; kind=:default)
+    @test size(out_def, 2) == 2 # hard NMS suppresses the overlapped box outright
+end
+
 @testset "Custom cfg's" begin
+    @testset "overridecfg! non-net layers" begin
+        cfgvec = ObjectDetector.YOLO.cfgread(joinpath(ObjectDetector.YOLO.models_dir(), "yolov3.cfg"))
+        ObjectDetector.YOLO.overridecfg!(cfgvec, [(:yolo, 3, :classes, 2), (:net, 1, :width, 512)])
+        yolos = [last(p) for p in cfgvec if first(p) === :yolo]
+        @test length(yolos) == 3
+        @test yolos[3][:classes] == 2
+        @test yolos[1][:classes] == 80
+        @test cfgvec[1][2][:width] == 512
+    end
     @testset "Valid non-square dimensions (512x384)" begin
         img = load(joinpath(@__DIR__,"images","dog-cycle-car.png"))
         yolomod = YOLO.v3_COCO(silent=true, cfgchanges=[(:net, 1, :width, 512), (:net, 1, :height, 384)])

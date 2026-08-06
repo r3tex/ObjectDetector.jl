@@ -6,7 +6,7 @@ Supported YOLO models are: `v2`, `v2-tiny`, `v3`, `v3-spp`, `v3-tiny`, `v4`, `v4
 
 Other less standard models may work also.
 
-Note that v3+ models have result parity with [AlexeyAB/darknet](https://github.com/AlexeyAB/darknet), and are directly tested against [Darknet.jl](https://github.com/IanButterworth/Darknet.jl) (see tests)
+Note that all supported models have result parity with [AlexeyAB/darknet](https://github.com/AlexeyAB/darknet), and are directly tested against [Darknet.jl](https://github.com/IanButterworth/Darknet.jl) (see tests)
 
 Training using ObjectDetector is currently unproven/untested.
 
@@ -18,7 +18,7 @@ Requires julia v1.10+. From the Julia REPL, type `]` to enter the Pkg REPL mode 
 pkg> add ObjectDetector
 ```
 
-As of ObjectDetector v0.3, if you want to use CUDA accelleration you will also need to
+As of ObjectDetector v0.3, if you want to use CUDA acceleration you will also need to
 add `CUDA` and `cuDNN` to your project and load both packages.
 
 ## Usage
@@ -29,7 +29,7 @@ add `CUDA` and `cuDNN` to your project and load both packages.
 ```julia
 using ObjectDetector, FileIO, ImageIO
 
-yolomod = YOLO.v3_608_COCO(batch=1, silent=true) # Load the YOLOv3-tiny model pretrained on COCO, with a batch size of 1
+yolomod = YOLO.v3_608_COCO(batch=1, silent=true) # Load the 608x608 YOLOv3 model pretrained on COCO, with a batch size of 1
 
 batch = emptybatch(yolomod) # Create a batch object. Automatically uses the GPU if available
 
@@ -62,10 +62,10 @@ dimension is an integer multiple of the filter size of the first conv layer (typ
 
 On CPU an `AllocArrays` & `Adapt` - based allocator is used to reduce allocations.
 
-To opt out of the allocator use `disable_bumper=true`.
+To opt out of the allocator use `disallow_bumper=true`.
 i.e.
 ```julia
-yolomod = YOLO.v3_608_COCO(batch=1, disable_bumper=true)
+yolomod = YOLO.v3_608_COCO(batch=1, disallow_bumper=true)
 ```
 
 ### Visualizing the result
@@ -80,7 +80,7 @@ save("result.png", imgBoxes)
 The darknet YOLO models from https://pjreddie.com/darknet/yolo/ that are pretrained on the COCO dataset are available:
 
 ```julia
-YOLO.v2_COCO() #Currently broken (weights seem bad, model may work with custom weights)
+YOLO.v2_COCO()
 YOLO.v2_tiny_COCO()
 
 YOLO.v3_COCO()

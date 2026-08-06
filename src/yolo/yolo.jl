@@ -70,7 +70,7 @@ end
 
 Read the YOLO binary weights
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool; old_darknet::Bool=false)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
     function read_array(io::IOBuffer, n::Int)
         expected = n * sizeof(Float32)
         data = read(io, expected)
@@ -81,15 +81,10 @@ function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int
     end
     dummy = isnothing(bytes)
     if bn
-        if old_darknet
-            # PJReddie Darknet: scales, biases, means, vars
-            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
-            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
-        else
-            # AlexeyAB fork: biases, scales, means, vars
-            bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
-            bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
-        end
+        # Both PJReddie darknet and the AlexeyAB fork write, for every
+        # darknet version: biases, scales, means, vars (load_convolutional_weights)
+        bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
         bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
         bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
         cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
@@ -248,14 +243,22 @@ end
 """
     reorg(a, stride)
 
-Reshapes feature map - decreases size and increases number of channels, without
-changing elements. stride=2 mean that width and height will be decreased by 2
-times, and number of channels will be increased by 2x2 = 4 times, so the total
-number of element will still the same: width_old*height_old*channels_old = width_new*height_new*channels_new
+Reorg (passthrough) layer as used by YOLOv2: decreases width and height by a
+factor of `stride` and increases channels by a factor of `stride^2`, keeping
+the total element count.
+
+This replicates darknet's legacy `[reorg]` layer exactly (`reorg_cpu` with
+`forward=0` as called by `forward_reorg_old_layer` for `reverse=0`), including
+its idiosyncratic element ordering, since pretrained weights depend on it. See
+https://github.com/AlexeyAB/darknet/blob/9d40b619756be9521bc2ccd81808f502daaa3e9a/src/blas.c#L10
 """
-function reorg(a, stride)
-    w, h, c = size(a)
-    return reshape(a, (w // stride, h // stride, c*(stride^2)))
+function reorg(a::AbstractArray{<:Any,4}, stride::Integer)
+    w, h, c, b = size(a)
+    @assert w % stride == 0 && h % stride == 0 && c % stride^2 == 0 "reorg with stride $stride requires width & height divisible by $stride and channels divisible by $(stride^2), got ($w, $h, $c)"
+    in_c = c ÷ (stride * stride)
+    x6 = reshape(a, stride, w, stride, h, in_c, b)
+    o6 = permutedims(x6, (2, 4, 5, 1, 3, 6))
+    return reshape(o6, w ÷ stride, h ÷ stride, c * stride * stride, b)
 end
 
 """
@@ -269,7 +272,7 @@ i.e.
 function overridecfg!(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}},
                         cfgchanges::Vector{Tuple{Symbol,Int,Symbol,U}};
                         silent::Bool = false) where {T,U}
-    layers = map(x->first(x), cfgchanges)
+    layers = map(first, cfgvec)
     for cfgchange in cfgchanges
         layer_idxs = findall(layers .== cfgchange[1])
         length(layer_idxs) < cfgchange[2] && error("Number of $(cfgchange[1]) layers found ($(length(layer_idxs))) less than desired ($(cfgchange[2])).")
@@ -302,91 +305,14 @@ _route(val, channels) = x -> val[:, :, channels, :]
 _add(val, act) = x -> broadcast!((a, b) -> act(a + b), x, x, val)
 _cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
 
-flux_maxpool = true
-@static if flux_maxpool
-    ## Flux maxpool approach
-    function _maxpool(siz, stride)
-        # For a 2x2 pool, use explicit padding to preserve dimensions.
-        pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
-        return x -> maxpool(x; siz, stride, pad)
-    end
-    function maxpool(x; siz, stride, pad)
-        return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
-    end
-else
-    ## Direct copy of darknet maxpool approach
-    function _maxpool(siz, stride)
-        pad = if siz == 2 && stride == 1
-            # For a 2×2 pool with stride=1, pad asymmetrically so that
-            # for an odd input (e.g. 13) the effective input becomes 14,
-            # producing an output of 13.
-            1
-        elseif siz == 2 && stride == 2
-            0
-        else
-            div(siz, 2)
-        end
-        return x -> darknet_maxpool_layer(x, siz, (stride, stride), pad)
-    end
-    function maxpool(x::AbstractArray{Float32,4},
-        siz::Int,
-        stride::Tuple{Int,Int},
-        pad::Int;
-        return_indexes::Bool=false)
-        # x: input array with dimensions (H, W, C, N)
-        # siz: pooling window size (e.g., 2)
-        # stride: (stride_y, stride_x)
-        # pad: total padding (as in Darknet, where often for 2×2, stride=1, pad is set so that the
-        #      effective input is increased asymetrically)
-        # return_indexes: if true, also return the indexes of the max values.
-        H, W, C, N = size(x)
-        stride_y, stride_x = stride
-        out_h = div(H + pad - siz, stride_y) + 1
-        out_w = div(W + pad - siz, stride_x) + 1
-
-        # Allocate output; note we set the pool default to -Inf
-        y = fill(-Inf32, out_h, out_w, C, N)
-        idx = return_indexes ? similar(y, Int) : nothing
-
-        # Compute offsets as in Darknet:
-        #   h_offset = -l.pad/2,  w_offset = -l.pad/2.
-        h_offset = -div(pad, 2)
-        w_offset = -div(pad, 2)
-
-        # Loop over batch, channel, and output spatial locations.
-        # In Darknet, the loops are ordered as: batch, channel, out_h, out_w
-        for b in 1:N
-            for k in 1:C
-                for i in 1:out_h
-                    for j in 1:out_w
-                        max_val = -Inf32
-                        max_index = -1  # default (could be left as -1 if no valid element is found)
-                        # Loop over the pooling window:
-                        for n in 0:(siz-1)
-                            for m in 0:(siz-1)
-                                # Compute current position, adjusting for 1-indexed Julia arrays:
-                                cur_h = h_offset + (i - 1) * stride_y + n + 1
-                                cur_w = w_offset + (j - 1) * stride_x + m + 1
-                                if cur_h >= 1 && cur_h <= H && cur_w >= 1 && cur_w <= W
-                                    val = x[cur_h, cur_w, k, b]
-                                    if val > max_val
-                                        max_val = val
-                                        # Save linear index (or you could choose to store a CartesianIndex)
-                                        max_index = LinearIndices(x)[CartesianIndex(cur_h, cur_w, k, b)]
-                                    end
-                                end
-                            end
-                        end
-                        y[i, j, k, b] = max_val
-                        if return_indexes
-                            idx[i, j, k, b] = max_index
-                        end
-                    end
-                end
-            end
-        end
-        return return_indexes ? (y, idx) : y
-    end
+## Flux maxpool approach
+function _maxpool(siz, stride)
+    # For a 2x2 pool, use explicit padding to preserve dimensions.
+    pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
+    return x -> maxpool(x; siz, stride, pad)
+end
+function maxpool(x; siz, stride, pad)
+    return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
 end
 
 ########################################################
@@ -470,7 +396,7 @@ mutable struct Yolo <: AbstractModel
                 acts[cfg_idx] = block[:activation]
                 bn      = haskey(block, :batch_normalize)
                 cw, cb, bb, bw, bm, bv = try
-                    readweights(weightbytes, kern, ch[end], filters, bn; old_darknet)
+                    readweights(weightbytes, kern, ch[end], filters, bn)
                 catch
                     !silent && println()
                     @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
@@ -498,8 +424,8 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["($cfg_idx) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :reorg
                 stride = block[:stride]
-                push!(fn, _reorg(stride)) # reorg (reshape to (w/stride, h/stride, c*stride^2))
-                push!(ch, ch[end])
+                push!(fn, _reorg(stride)) # reorg to (w/stride, h/stride, c*stride^2)
+                push!(ch, ch[end] * stride^2)
                 !silent && prettyprint(["($cfg_idx) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :maxpool
                 siz = block[:size]
@@ -752,7 +678,9 @@ Findmax, get the class with highest confidence and class number out.
 """
 function findmax!(input::AbstractArray{T}) where {T}
     @inbounds for i in axes(input, 2)
-        input[end-2, i], input[end-1, i] = findmax(@view input[6:end-3, i])
+        # class scores live in rows 6:end-4; rows end-3:end are the appended
+        # scratch attributes and must not participate in the max
+        input[end-2, i], input[end-1, i] = findmax(@view input[6:end-4, i])
     end
 end
 
@@ -832,9 +760,20 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
                 end
 
-                # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
-                # preceding conv layer activation was NOT logistic (e.g., it was linear)
-                if out[:final_conv_activation] != "logistic"
+                if yolo.cfg[:laststage] === :region
+                    # The region layer (yolov2) applies logistic to objectness, and
+                    # softmax over the class scores only when the cfg sets softmax=1;
+                    # with softmax=0 darknet leaves the class scores linear
+                    # (forward_region_layer)
+                    weights[:, :, 5, :, :] = σ.(weights[:, :, 5, :, :])
+                    if get(yolo.cfg[:output][outnr], :softmax, 0) != 0
+                        cls = weights[:, :, 6:end, :, :] # a view, via the enclosing @views
+                        cls .= exp.(cls .- maximum(cls, dims=3))
+                        cls ./= sum(cls, dims=3)
+                    end
+                elseif out[:final_conv_activation] != "logistic"
+                    # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
+                    # preceding conv layer activation was NOT logistic (e.g., it was linear)
                     weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
                 end
 
@@ -861,10 +800,11 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
                 weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
-                # add additional attributes for post-inference analysis: confidence, classnr, outnr, batchnr
+                # add 4 additional attributes for post-inference analysis. After findmax!
+                # below they hold: (unused), best class confidence (end-2),
+                # best class index (end-1), batch number (end)
                 weights = extend_for_attributes(weights, w, h, bo, ba)
 
-                weights[:, :, a+3, outnr, :] .= outnr # write output number to attribute a+3
                 for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
                 weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
                 weights = reshape(weights, a+4, :) # reshape to attr, data
@@ -887,7 +827,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     overlap_thresh = Float32(@something overlap_thresh yolo.out[1][:ignore_thresh])
                     nms_kind = yolo.out[1][:nms_kind]
                     beta_nms = yolo.out[1][:beta_nms]
-                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize; kind=nms_kind, beta=beta_nms)
+                    ret = perform_detection_nms(batchout, overlap_thresh, batchsize; kind=nms_kind, beta=beta_nms, detect_thresh=Float32(detect_thresh))
                 end
             end
         end
