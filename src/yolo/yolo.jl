@@ -369,7 +369,9 @@ mutable struct Yolo <: AbstractModel
         cfg[:darknetversion] = VersionNumber(maj, min, subv)
         old_darknet = cfg[:darknetversion] < v"0.2.0"
         # In AlexeyAB, seen was split into seen and seen_images for more training info tracking
-        seen, seen_images = if old_darknet
+        seen, seen_images = if dummy
+            Int32(0), Int32(0)
+        elseif old_darknet
             reinterpret(Int32, read(weightbytes, 4*1)), 0
         else
             reinterpret(Int32, read(weightbytes, 4*2))
