@@ -4,16 +4,13 @@ oThresh = 0.5 #Overlap Threshold (maximum acceptable IoU)
 
 psnr_thresh = 35.0
 
+# Resolve artifacts through the package itself: `artifact""` cannot be used in
+# test files because the search for Artifacts.toml stops at test/Project.toml
 @testset "Download all artifacts" begin
-    artifact"yolov2-COCO"
-    artifact"yolov2-tiny-COCO"
-    artifact"yolov3-COCO"
-    artifact"yolov3-spp-COCO"
-    artifact"yolov3-tiny-COCO"
-    artifact"yolov4-COCO"
-    artifact"yolov4-tiny-COCO"
-    artifact"yolov7-COCO"
-    artifact"yolov7-tiny-COCO"
+    for (name, files) in sort(collect(YOLO.YOLO_MODELS), by = first)
+        cfgfile, weightsfile = files()
+        @test isfile(weightsfile)
+    end
 end
 
 Darknet.download_defaults()
