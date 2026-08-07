@@ -13,20 +13,6 @@ function emptybatch(model::T) where {T<:AbstractModel}
     end
 end
 
-"""
-    flipdict(dict::Dict)
-
-Flip the key=>value pair for each entry in a dict.
-"""
-flipdict(dict::Dict) = Dict(map(x->(dict[x],x),collect(keys(dict))))
-
-"""
-    createcountdict(dict::Dict)
-
-Create a dict copy of namesdict, for counting the occurances of each named object.
-"""
-createcountdict(dict::Dict) = Dict(map(x->(x,0),collect(keys(dict))))
-
 function gen_class_colors(model::YOLO.Yolo)
     classes = get_cfg(model)[:output][1][:classes]
     seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]
