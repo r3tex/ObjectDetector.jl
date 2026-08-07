@@ -8,8 +8,6 @@ using ImageFiltering
 using ImageTransformations
 using ImageCore
 
-using BenchmarkTools
-using PrettyTables
 using ImageDraw
 using PrecompileTools
 using TimerOutputs
@@ -19,6 +17,22 @@ using Cairo
 using Colors
 
 const to = TimerOutput()
+
+"""
+    benchmark(; models = sort(collect(keys(YOLO.YOLO_MODELS))), kw...)
+
+Benchmark the pretrained models. Requires BenchmarkTools and PrettyTables to
+be loaded first: `using BenchmarkTools, PrettyTables`.
+"""
+function benchmark end
+
+function __init__()
+    Base.Experimental.register_error_hint(MethodError) do io, exc, argtypes, kwargs
+        if exc.f === benchmark
+            print(io, "\nObjectDetector.benchmark requires BenchmarkTools and PrettyTables: run `using BenchmarkTools, PrettyTables` first.")
+        end
+    end
+end
 
 abstract type AbstractModel end
 function get_input_size end

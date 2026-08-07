@@ -167,7 +167,8 @@ The weights are stored as lazily-loaded julia artifacts (introduced in Julia 1.3
 
 ## Benchmarking
 
-Pretrained models can be easily tested with `ObjectDetector.benchmark()`.
+Pretrained models can be easily tested with `ObjectDetector.benchmark()`, after
+loading its requirements: `using BenchmarkTools, PrettyTables`.
 
 During the benchmark `detect_thresh` is minimized and `overlap_thresh` is maximised to return maximum
 results, for worst case testing.
