@@ -56,7 +56,7 @@ include("resrefs.jl")
         end
         cfgfile, weightsfile = files()
         test_size = get(model_test_sizes, modelname, nothing)
-        @info "Testing model $modelname" test_size
+        @info "Testing model $modelname" test_size free_memory=Base.format_bytes(Sys.free_memory())
 
         yolomod, net = nothing, nothing
 
@@ -140,10 +140,13 @@ include("resrefs.jl")
             @test dark_classid == julia_classid
         end
         # drop references before collecting so the darknet C-side network is
-        # freed (via its finalizer) before the next model loads
+        # freed (via its finalizer) before the next model loads, and ask glibc
+        # to return freed pages to the OS: constrained CI runners otherwise
+        # accumulate each model's peak RSS until the runner is killed
         net = nothing
         yolomod = nothing
-        GC.gc()
+        GC.gc(true)
+        Sys.islinux() && ccall(:malloc_trim, Cint, (Cint,), 0)
     end
 end
 
