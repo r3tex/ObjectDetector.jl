@@ -46,6 +46,25 @@ function _promote_to_n0f8(img)
     end
 end
 
+# Map normalized model-space bbox coordinates to image pixel scale, accounting
+# for the transpose between julia (column-major) and darknet (row-major) layouts
+function _box_geometry(img, model, transpose)
+    imgratio = size(img,2) / size(img,1)
+    if transpose
+        modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
+        idxs = (1, 2, 3, 4)
+    else
+        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
+        idxs = (2, 1, 4, 3)
+    end
+    if modelratio > imgratio
+        h, w = size(img,1) .* (1, modelratio)
+    else
+        h, w = size(img,2) ./ (modelratio, 1)
+    end
+    return w, h, idxs
+end
+
 """
     draw_boxes(img::Array, model::YOLO.Yolo, padding::Array, results)
     draw_boxes!(img::Array, model::YOLO.Yolo, padding::Array, results)
@@ -67,19 +86,7 @@ function draw_boxes!(img::Union{Matrix{RGBA{N0f8}},Matrix{RGB{N0f8}}}, model::YO
         label_colors = gen_class_colors(model)
     end
 
-    imgratio = size(img,2) / size(img,1)
-    if transpose
-        modelratio = get_cfg(model)[:width]  / get_cfg(model)[:height]
-        x1i,y1i,x2i,y2i = 1,2,3,4
-    else
-        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
-        x1i,y1i,x2i,y2i = 2,1,4,3
-    end
-    if modelratio > imgratio
-        h, w = size(img,1) .* (1, modelratio)
-    else
-        h, w = size(img,2) ./ (modelratio, 1)
-    end
+    w, h, (x1i, y1i, x2i, y2i) = _box_geometry(img, model, transpose)
     length(results) == 0 && return img
 
     img_rgb24 = similar(img, RGB24)
@@ -138,23 +145,7 @@ end
 
 # keep this for users that want to keep drawing boxes directly into non-color type images
 function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArray, results; transpose=true, kwargs...)
-    imgratio = size(img,2) / size(img,1)
-    if transpose
-        modelratio = get_cfg(model)[:width] / get_cfg(model)[:height]
-        x1i, y1i, x2i, y2i = [1, 2, 3, 4]
-    else
-        modelratio = get_cfg(model)[:height] / get_cfg(model)[:width]
-        x1i, y1i, x2i, y2i = [2, 1, 4, 3]
-    end
-    if modelratio > imgratio
-        h, w = size(img,1) .* (1, modelratio)
-    else
-        h, w = size(img,2) ./ (modelratio, 1)
-    end
-
-    # p1 = Point(1, 1)
-    # p2 = Point(round(Int, w-((padding[x1i]+padding[x2i])*w)), round(Int, h-((padding[y1i]+padding[y2i])*h)))
-    # draw!(img, LineSegment(p1, p2), zero(eltype(img)))
+    w, h, (x1i, y1i, x2i, y2i) = _box_geometry(img, model, transpose)
     length(results) == 0 && return img
     for i in 1:size(results,2)
         bbox = results[1:4, i] .- padding
