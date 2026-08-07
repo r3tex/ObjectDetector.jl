@@ -17,6 +17,28 @@ Darknet.download_defaults()
 
 const skip_models = ()
 
+# Large models are tested below their native size: darknet's loader allocates
+# all layer activations eagerly at cfg size, and native 640-1280 inputs
+# exhaust the memory of standard CI runners. Parity vs darknet holds at any
+# valid size as long as both sides use the same one. Sizes must be divisible
+# by 64 for v4_p6, 32 otherwise.
+const model_test_sizes = Dict(
+    "v4_csp_x_swish_COCO" => 512,
+    "v4x_mish_COCO"       => 512,
+    "v4_p5_COCO"          => 512,
+    "v4_p6_COCO"          => 448,
+)
+
+# Write a copy of the cfg with width/height overridden, for the Darknet.jl side
+function sized_cfgfile(cfgfile, size)
+    lines = readlines(cfgfile)
+    lines = map(l -> startswith(strip(l), "width") ? "width=$size" :
+                     startswith(strip(l), "height") ? "height=$size" : l, lines)
+    tmp = joinpath(mktempdir(), basename(cfgfile))
+    write(tmp, join(lines, "\n"))
+    return tmp
+end
+
 const testimages = ["dog-cycle-car", "dog-cycle-car_nonsquare"]
 const namesfile = joinpath(ObjectDetector.YOLO.models_dir(), "coco.names")
 const names = collect(eachline(namesfile))
@@ -33,15 +55,17 @@ include("resrefs.jl")
             continue
         end
         cfgfile, weightsfile = files()
-        @info "Testing model $modelname"
+        test_size = get(model_test_sizes, modelname, nothing)
+        @info "Testing model $modelname" test_size
 
         yolomod, net = nothing, nothing
 
         @testset "Load in Darknet.jl" begin
-            net = @suppress Darknet.load_network(cfgfile, weightsfile, 1)
+            darknet_cfg = test_size === nothing ? cfgfile : sized_cfgfile(cfgfile, test_size)
+            net = @suppress Darknet.load_network(darknet_cfg, weightsfile, 1)
         end
         @testset "Load in ObjectDetector.jl" begin
-            yolomod = YOLO.yolo_model(modelname; silent=true)
+            yolomod = YOLO.yolo_model(modelname; silent=true, w=test_size, h=test_size)
         end
 
         (yolomod === nothing || net === nothing) && continue
@@ -115,6 +139,10 @@ include("resrefs.jl")
             julia_classid = julia_sorted[end-1, :]
             @test dark_classid == julia_classid
         end
+        # drop references before collecting so the darknet C-side network is
+        # freed (via its finalizer) before the next model loads
+        net = nothing
+        yolomod = nothing
         GC.gc()
     end
 end
