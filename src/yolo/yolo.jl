@@ -116,9 +116,6 @@ lhtan(x) = x < 0f0 ? 0.001f0 * x :
            x > 1f0 ? 0.001f0 * (x - 1f0) + 1f0 :
                      x
 
-# Matches: lhtan_gradient_kernel
-lhtan_grad(x) = (x > 0f0 && x < 1f0) ? 1f0 : 0.001f0
-
 # Matches: hardtan_activate_kernel
 hardtan(x) = clamp(x, -1f0, 1f0)
 
