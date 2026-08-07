@@ -215,5 +215,9 @@ function benchmark(; models = sort(collect(keys(YOLO.YOLO_MODELS))), reverseAfte
         batch = nothing
         GC.gc()
     end
-    pretty_table(table, header = header)
+    if pkgversion(PrettyTables) >= v"3"
+        pretty_table(table; column_labels = header)
+    else
+        pretty_table(table; header = header)
+    end
 end
