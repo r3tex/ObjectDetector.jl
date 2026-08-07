@@ -371,10 +371,13 @@ mutable struct Yolo <: AbstractModel
         seen, seen_images = if dummy
             Int32(0), Int32(0)
         elseif old_darknet
-            reinterpret(Int32, read(weightbytes, 4*1)), 0
+            only(reinterpret(Int32, read(weightbytes, 4*1))), Int32(0)
         else
             reinterpret(Int32, read(weightbytes, 4*2))
         end
+        # training metadata; read to advance the stream, kept for reference
+        cfg[:seen] = Int(first(seen))
+        cfg[:seen_images] = Int(first(seen_images))
         cfg[:batchsize] = batchsize
         cfg[:output] = []
 
