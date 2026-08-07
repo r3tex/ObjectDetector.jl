@@ -1,6 +1,6 @@
 name = "ObjectDetector"
 uuid = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
-version = "1.1.2"
+version = "1.2.0"
 authors = ["Robert Luciani"]
 
 [workspace]
