@@ -35,8 +35,4 @@ import .YOLO
 
 include("utils.jl")
 
-if !isdefined(Base, :get_extension)
-    include("../ext/CUDAExt.jl")
-end
-
 end #module
