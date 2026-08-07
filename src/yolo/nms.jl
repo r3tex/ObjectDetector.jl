@@ -5,13 +5,19 @@ Compute IoU or Distance-IoU (DIoU) between a single bounding box `box1`
 and multiple boxes `box2`, writing results into `out`.
 
 - `box1`: A 4-element vector `[x1, y1, x2, y2]`
-- `box2`: A 4×N matrix, where each column is a bounding box
+- `box2`: A matrix with bounding box coordinates in rows 1:4, one box per column
 - `out`: A preallocated vector of length N for results
 - `distance`: if true, computes DIoU; otherwise standard IoU
 
+The 4-argument form compares `box1` against `box2[:, cols[i]]` for each `i`,
+allowing an index list to select columns without allocating a slice.
+
 Avoids allocations by reusing `out`.
 """
-function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false, beta = T(0.6)) where T
+bboxiou!(out::AbstractArray{T}, box1, box2; kw...) where {T} =
+    bboxiou!(out, box1, box2, axes(box2, 2); kw...)
+
+function bboxiou!(out::AbstractArray{T}, box1, box2, cols::AbstractVector{<:Integer}; distance::Bool=false, beta = T(0.6)) where T
     b1x1, b1y1, b1x2, b1y2 = box1
     b1w = b1x2 - b1x1
     b1h = b1y2 - b1y1
@@ -21,10 +27,11 @@ function bboxiou!(out::AbstractArray{T}, box1, box2; distance::Bool=false, beta 
     b1cy = distance ? (b1y1 + b1y2) / 2 : zero(T)
 
     @inbounds for i in eachindex(out)
-        b2x1 = box2[1, i]
-        b2y1 = box2[2, i]
-        b2x2 = box2[3, i]
-        b2y2 = box2[4, i]
+        col = cols[i]
+        b2x1 = box2[1, col]
+        b2y1 = box2[2, col]
+        b2x2 = box2[3, col]
+        b2y2 = box2[4, col]
 
         # Intersection
         rectx1 = max(b1x1, b2x1)
@@ -117,12 +124,11 @@ function nms!(dets::AbstractArray{T}, iou_thresh; kind::Symbol = :default, beta:
         end
         b2_len = idx_len - 1
         b1 = @view dets[1:4, i]
-        b2s = @view dets[1:4, idxs[2:idx_len]]
 
         # Note that even diounms uses iou in inference. During training apparently it uses diou though.
         # That needs a further investigation though
         distance = kind in (:greedynms, :diounms)
-        bboxiou!(view(ious, 1:b2_len), b1, b2s; distance, beta)
+        bboxiou!(view(ious, 1:b2_len), b1, dets, view(idxs, 2:idx_len); distance, beta)
 
         write_idx = 0
         if kind in (:default, :greedynms, :diounms)
@@ -166,9 +172,10 @@ end
 """
     perform_detection_nms(batchout, overlap_thresh, batchsize; kind, beta, detect_thresh)
 
-For each batch `b` in `1:batchsize`, extract the detections from `batchout`,
-group them by class, sort each group by the end-2 column (class confidence score) descending, and
-run NMS to remove duplicates using bboxiou and overlap_thresh.
+Group the detections in `batchout` by batch and class, sort each group by the
+end-2 column (class confidence score) descending, and run NMS to remove
+duplicates using bboxiou and overlap_thresh. Returned detections are ordered
+by batch, then class id, then descending score.
 
 `detect_thresh` re-applies the caller's score threshold to the kept boxes.
 This only matters for `kind = :soft`, where scores are decayed during NMS and
@@ -189,46 +196,37 @@ batchout rows:
 - The last row is the batch index
 """
 function perform_detection_nms(batchout, overlap_thresh, batchsize::Int; kind::Symbol=:default, beta::Float32=0.6f0, detect_thresh::Float32=0f0)
+    nfields, N = size(batchout)
     output = similar(batchout)
+
+    # Order all detections once: by batch, then class, then descending score.
+    # Each (batch, class) group is then a contiguous, already-sorted column
+    # range of `sorted`, avoiding the previous per-batch/per-class scans and
+    # per-group sortperm+copy. sortperm is stable, so equal-score detections
+    # keep their original relative order.
+    perm = sortperm(1:N; by = i -> (@inbounds (batchout[end, i], batchout[end-1, i], -batchout[end-2, i])))
+    sorted = batchout[:, perm]
+
     i = 1  # index for writing into `output`
-
-    for b in 1:batchsize
-        b_cols = findall(==(b), @view(batchout[end, :]))
-        if isempty(b_cols)
-            continue
+    col = 1
+    @views while col <= N
+        b = sorted[end, col]
+        cls = sorted[end-1, col]
+        stop = col
+        @inbounds while stop < N && sorted[end, stop+1] == b && sorted[end-1, stop+1] == cls
+            stop += 1
         end
 
-        page = @view batchout[:, b_cols]
-        class_ids = @view page[end-1, :]
+        dets = sorted[:, col:stop] # a view: contiguous columns, scores descending
 
-        seen_classes = Set{eltype(class_ids)}()
+        keep = nms!(dets, overlap_thresh; kind, beta)
 
-        for (local_col_idx, cls) in enumerate(class_ids)
-            if cls in seen_classes
-                continue
-            end
-            push!(seen_classes, cls)
-
-            c_idxs = findall(==(cls), class_ids)
-            if isempty(c_idxs)
-                continue
-            end
-
-            dets = @view page[:, c_idxs]
-
-            scores = @view dets[end-2, :]
-            sorted_idx = sortperm(scores, rev=true)
-            # nms takes views of sorted_dets and copying here results in lower allocs and faster nms
-            sorted_dets = dets[:, sorted_idx]
-
-            keep = nms!(sorted_dets, overlap_thresh; kind, beta)
-
-            @inbounds for k in keep
-                sorted_dets[end-2, k] < detect_thresh && continue # soft-NMS may have decayed the score below threshold
-                output[:, i] = sorted_dets[:, k]
-                i += 1
-            end
+        for k in keep
+            dets[end-2, k] < detect_thresh && continue # soft-NMS may have decayed the score below threshold
+            output[:, i] .= dets[:, k]
+            i += 1
         end
+        col = stop + 1
     end
     return output[:, 1:i-1]
 end

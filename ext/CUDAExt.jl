@@ -2,7 +2,7 @@ module CUDAExt
 
 using CUDA
 import Flux
-import ObjectDetector.YOLO: maxpool, clipdetect!, findmax!, keepdetections, extend_for_attributes, upsample
+import ObjectDetector.YOLO: maxpool, clipdetect!, findmax!, keepdetections, extend_for_attributes, upsample, fast_scalar_indexing
 
 const CU_FUNCTIONAL = Ref{Bool}()
 
@@ -104,6 +104,10 @@ end
 function extend_for_attributes(weights::CuArray, w, h, bo, ba)
     return cat(weights, CUDA.zeros(Float32, w, h, 4, bo, ba), dims = 3)
 end
+
+# scalar-indexing loops are not viable on device arrays; generic code paths
+# gated on this trait use dense array operations instead
+fast_scalar_indexing(::CuArray) = false
 
 """
     upsample(a, stride)

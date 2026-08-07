@@ -402,13 +402,17 @@ mutable struct Yolo <: AbstractModel
                     @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
                     rethrow()
                 end
+                if bn
+                    # Fold batchnorm into the conv weights and bias (as darknet's
+                    # fuse_conv_batchnorm does): at inference BN is the affine map
+                    # y -> (y - mean) / sqrt(var + eps) * scale + bias, which per
+                    # output channel folds exactly into the conv kernel and bias.
+                    # This removes a full read+write pass over every conv output.
+                    bnscale = bw ./ sqrt.(bv .+ 1f-5)
+                    cw = cw .* reshape(bnscale, 1, 1, 1, :)
+                    cb = bb .- bm .* bnscale
+                end
                 push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                # push!(stack, x -> begin
-                #     _out = maybe_gpu(Flux.Conv(cw, cb; stride=stride, pad=pad, dilation=1))(x)
-                #     @info "Layer conv $(size(x)) => $(size(_out))"
-                #     return _out
-                # end)
-                bn && push!(stack, maybe_gpu(Flux.BatchNorm(identity, bb, bw, bm, bv, 1f-5, 0.1f0, true, true, nothing, length(bb))))
                 push!(stack, _broadcast(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
@@ -687,17 +691,76 @@ end
 
 """
     keepdetections(arr::AbstractArray)
+    keepdetections(outs::AbstractVector)
 
-Reduces the size of array and only keeps detections over threshold
+Reduces the size of array and only keeps detections over threshold.
+The vector form takes the per-output-head matrices and gathers the kept
+columns from all of them in one pass, without materializing their
+concatenation first.
 """
 function keepdetections(arr::AbstractArray)
     return arr[:, arr[end-2, :] .> 0]
+end
+
+function keepdetections(outs::AbstractVector)
+    if !all(fast_scalar_indexing, outs)
+        return keepdetections(cat(outs..., dims=2))
+    end
+    nfields = size(first(outs), 1)
+    n = sum(_count_kept, outs)
+    out = similar(first(outs), nfields, n)
+    i = 1
+    for o in outs
+        i = _copy_kept!(out, o, i)
+    end
+    return out
+end
+
+# function barriers: `outs` holds abstractly-typed elements
+function _count_kept(o::AbstractMatrix)
+    n = 0
+    @inbounds for j in axes(o, 2)
+        n += o[end-2, j] > 0f0
+    end
+    return n
+end
+function _copy_kept!(out::AbstractMatrix, o::AbstractMatrix, i::Int)
+    @inbounds for j in axes(o, 2)
+        if o[end-2, j] > 0f0
+            @views out[:, i] .= o[:, j]
+            i += 1
+        end
+    end
+    return i
 end
 
 function extend_for_attributes(weights::AbstractArray, w, h, bo, ba)
     x = similar(weights, Float32, w, h, 4, bo, ba)
     x .= 0f0
     return cat(weights, x, dims = 3)
+end
+
+fast_scalar_indexing(::AbstractArray) = true # CPU-resident arrays; overridden for CuArray in CUDAExt
+
+"""
+    flatten_with_attributes(weights, w, h, a, bo, ba)
+
+Permute a (w, h, a, bo, ba) output block to attribute-major order and append 4
+zero-initialized attribute rows, returning an (a+4, w*h*bo*ba) matrix.
+Equivalent to extend_for_attributes + permutedims + reshape, but with a single
+allocation on the CPU fast path.
+"""
+function flatten_with_attributes(weights::AbstractArray, w, h, a, bo, ba)
+    if fast_scalar_indexing(weights)
+        dst = similar(weights, Float32, a+4, w, h, bo, ba)
+        permutedims!(view(dst, 1:a, :, :, :, :), weights, (3, 1, 2, 4, 5))
+        fill!(view(dst, a+1:a+4, :, :, :, :), 0f0)
+        return reshape(dst, a+4, :)
+    else
+        # GPU path: dense cat + permutedims, avoiding scalar indexing
+        ext = extend_for_attributes(weights, w, h, bo, ba)
+        return reshape(permutedims(ext, (3, 1, 2, 4, 5)), a+4, :)
+    end
 end
 
 check_w_type(arr::AllocArray) = check_w_type(arr.arr)
@@ -752,12 +815,12 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                         delta = Float32(yolo.cfg[:output][outnr][:max_delta])
                         clamp!(weights[:, :, 1:2, :, :], -delta, delta)
                     end
-                    weights[:, :, 1:2, :, :] = (weights[:, :, 1:2, :, :] .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
-                    weights[:, :, 3:4, :, :] = (weights[:, :, 3:4, :, :] .* sxy).^2 .* out[:anchor]
+                    weights[:, :, 1:2, :, :] .= (weights[:, :, 1:2, :, :] .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] .= (weights[:, :, 3:4, :, :] .* sxy).^2 .* out[:anchor]
                 else
                     # Classic behavior
-                    weights[:, :, 1:2, :, :] = (σ.(weights[:, :, 1:2, :, :]) .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
-                    weights[:, :, 3:4, :, :] = exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
+                    weights[:, :, 1:2, :, :] .= (σ.(weights[:, :, 1:2, :, :]) .* sxy .- (sxy - 1)/2 .+ out[:offset]) .* out[:scale]
+                    weights[:, :, 3:4, :, :] .= exp.(weights[:, :, 3:4, :, :]) .* out[:anchor]
                 end
 
                 if yolo.cfg[:laststage] === :region
@@ -765,7 +828,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                     # softmax over the class scores only when the cfg sets softmax=1;
                     # with softmax=0 darknet leaves the class scores linear
                     # (forward_region_layer)
-                    weights[:, :, 5, :, :] = σ.(weights[:, :, 5, :, :])
+                    weights[:, :, 5, :, :] .= σ.(weights[:, :, 5, :, :])
                     if get(yolo.cfg[:output][outnr], :softmax, 0) != 0
                         cls = weights[:, :, 6:end, :, :] # a view, via the enclosing @views
                         cls .= exp.(cls .- maximum(cls, dims=3))
@@ -774,40 +837,41 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
                 elseif out[:final_conv_activation] != "logistic"
                     # Apply sigmoid to objectness (5) and class scores (6:a) ONLY if the
                     # preceding conv layer activation was NOT logistic (e.g., it was linear)
-                    weights[:, :, 5:end, :, :] = σ.(weights[:, :, 5:end, :, :])
+                    weights[:, :, 5:end, :, :] .= σ.(weights[:, :, 5:end, :, :])
                 end
 
                 if conf_fix
                     # post-sigmoid class confidence scores should be multiplied by the post-sigmoid box confidence score
                     # see https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/public/yolo-v3-tiny-tf/README.md#original-model-1
-                    weights[:, :, 6:end, :, :] = weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
+                    weights[:, :, 6:end, :, :] .= weights[:, :, 6:end, :, :] .* weights[:, :, 5:5, :, :]
                 end
 
                 # Convert to image width & height scale (0.0-1.0)
-                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] ./ size(img, 1) #x
-                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] ./ size(img, 2) #y
+                weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] ./ size(img, 1) #x
+                weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] ./ size(img, 2) #y
                 if yolo.cfg[:laststage] === :region # indicates yolov2
                     cellsize_x, cellsize_y = (yolo.cfg[:width], yolo.cfg[:height]) ./ yolo.cfg[:gridsize]
-                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) * cellsize_x #w
-                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) * cellsize_y #h
+                    weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ size(img, 1)) .* cellsize_x #w
+                    weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ size(img, 2)) .* cellsize_y #h
                 else
-                    weights[:, :, 3, :, :] = (weights[:, :, 3, :, :] ./ size(img, 1)) #w
-                    weights[:, :, 4, :, :] = (weights[:, :, 4, :, :] ./ size(img, 2)) #h
+                    weights[:, :, 3, :, :] .= (weights[:, :, 3, :, :] ./ size(img, 1)) #w
+                    weights[:, :, 4, :, :] .= (weights[:, :, 4, :, :] ./ size(img, 2)) #h
                 end
 
-                weights[:, :, 1, :, :] = weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5) #x1
-                weights[:, :, 2, :, :] = weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5) #y1
-                weights[:, :, 3, :, :] = weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
-                weights[:, :, 4, :, :] = weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
+                weights[:, :, 1, :, :] .= weights[:, :, 1, :, :] .- (weights[:, :, 3, :, :] .* 0.5f0) #x1
+                weights[:, :, 2, :, :] .= weights[:, :, 2, :, :] .- (weights[:, :, 4, :, :] .* 0.5f0) #y1
+                weights[:, :, 3, :, :] .= weights[:, :, 1, :, :] .+ weights[:, :, 3, :, :] #x2
+                weights[:, :, 4, :, :] .= weights[:, :, 2, :, :] .+ weights[:, :, 4, :, :] #y2
 
                 # add 4 additional attributes for post-inference analysis. After findmax!
                 # below they hold: (unused), best class confidence (end-2),
                 # best class index (end-1), batch number (end)
-                weights = extend_for_attributes(weights, w, h, bo, ba)
+                weights = flatten_with_attributes(weights, w, h, a, bo, ba)
 
-                for batch in 1:ba weights[:, :, a+4, :, batch] .= batch end # write batchnumber to attribute a+4
-                weights = permutedims(weights, [3, 1, 2, 4, 5]) # place attributes first
-                weights = reshape(weights, a+4, :) # reshape to attr, data
+                npercol = w * h * bo # columns are ordered (w, h, bo, ba), so batches are contiguous
+                for batch in 1:ba
+                    weights[end, (batch-1)*npercol+1:batch*npercol] .= batch # write batchnumber to the last attribute row
+                end
 
                 detect_thresh = Float32(@something detect_thresh out[:truth_thresh])
                 findmax!(weights)
@@ -817,7 +881,7 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
 
             # PROCESSING ALL PREDICTIONS
             ############################
-            @timeit to "filter detections" batchout = cpu(keepdetections(cat(outweights..., dims=2)))
+            @timeit to "filter detections" batchout = cpu(keepdetections(outweights))
 
             if size(batchout, 2) < 2
                 ret = batchout # empty or singular output doesn't need further filtering
