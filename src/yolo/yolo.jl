@@ -119,8 +119,7 @@ lhtan(x) = x < 0f0 ? 0.001f0 * x :
 # Matches: hardtan_activate_kernel
 hardtan(x) = clamp(x, -1f0, 1f0)
 
-# Matches: linear_activate_kernel
-linear(x) = x
+# Matches: linear_activate_kernel (Base.identity)
 
 # Matches: logistic_activate_kernel
 logistic(x) = 1f0 / (1f0 + exp(-x))
@@ -188,7 +187,7 @@ swish(x) = x * σ(x)
 
 # Use this dict to translate the config activation names to function names
 const ACT = Dict(
-    "linear"    => linear,
+    "linear"    => identity,
     "logistic"  => logistic,
     "loggy"     => loggy,
     "relu"      => relu,
@@ -477,7 +476,7 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["\n($(length(fn))) ","route($(join(indices, ",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype === :shortcut
                 idx = block[:from] + cfg_idx
-                act = haskey(block, :activation) ? ACT[block[:activation]] : linear
+                act = haskey(block, :activation) ? ACT[block[:activation]] : identity
                 push!(fn, (idx, :add, act))
                 push!(ch, ch[end])
                 !silent && prettyprint(["\n($cfg_idx) ","shortcut($idx,$cfg_idx)"," => "],[:blue,:cyan,:green])
