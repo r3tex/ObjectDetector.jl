@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### New models
+- Add the Scaled-YOLOv4 family and yolov7x, all with official COCO weights:
+  `v4_csp_COCO`, `v4_csp_x_swish_COCO`, `v4x_mish_COCO`, `v4_p5_COCO`, `v4_p6_COCO`,
+  `v7x_COCO`. Pretrained models now default to their native input size
+  (416 for the previously-supported models, unchanged).
+
 ### Performance
 - Batchnorm is now folded into the conv weights at load time (as darknet's
   `fuse_conv_batchnorm` does), removing the BatchNorm pass entirely: ~4-9% faster forward

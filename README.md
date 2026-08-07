@@ -2,7 +2,7 @@
 
 Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models. Uses CUDA, if available.
 
-Supported YOLO models are: `v2`, `v2-tiny`, `v3`, `v3-spp`, `v3-tiny`, `v4`, `v4-tiny`, `v7`, `v7-tiny`
+Supported YOLO models are: `v2`, `v2-tiny`, `v3`, `v3-spp`, `v3-tiny`, `v4`, `v4-tiny`, `v4-csp`, `v4-csp-x-swish`, `v4x-mish`, `v4-p5`, `v4-p6` (Scaled-YOLOv4), `v7`, `v7-tiny`, `v7x`
 
 Other less standard models may work also.
 
@@ -111,7 +111,20 @@ YOLO.v4_tiny_COCO()
 
 YOLO.v7_COCO()
 YOLO.v7_tiny_COCO()
+
+# Scaled-YOLOv4 family (native sizes: csp 512, csp_x_swish & x_mish 640, p5 896, p6 1280)
+YOLO.v4_csp_COCO()
+YOLO.v4_csp_x_swish_COCO()
+YOLO.v4x_mish_COCO()
+YOLO.v4_p5_COCO()
+YOLO.v4_p6_COCO()
+
+# larger yolov7 (native size 640)
+YOLO.v7x_COCO()
 ```
+
+Each model defaults to its native input size; pass `w`/`h` to override. Note
+`v4_p6` requires dimensions divisible by 64 (the others require 32).
 Their width and height can be modified with:
 ```julia
 YOLO.v3_COCO(w=416,h=416)
