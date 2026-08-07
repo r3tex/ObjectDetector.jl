@@ -1,7 +1,3 @@
-using ImageFiltering
-using ImageTransformations
-using ImageCore
-
 """
     resizekern(source_size::Tuple{Int,Int}, dest_size::Tuple{Int,Int})
 

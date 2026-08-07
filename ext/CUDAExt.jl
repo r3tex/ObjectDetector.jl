@@ -4,17 +4,6 @@ using CUDA
 import Flux
 import ObjectDetector.YOLO: maxpool, clipdetect!, findmax!, keepdetections, extend_for_attributes, upsample, fast_scalar_indexing
 
-const CU_FUNCTIONAL = Ref{Bool}()
-
-function cu_functional()
-    if !isassigned(CU_FUNCTIONAL)
-        CUDA.allowscalar(false)
-        CU_FUNCTIONAL[] = CUDA.functional()
-    end
-    return CU_FUNCTIONAL[]
-end
-
-
 function clipdetect!(input::CuArray, conf)
     rows, cols = size(input)
     @cuda blocks=cols threads=1024 kern_clipdetect(input, conf)

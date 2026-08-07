@@ -116,14 +116,10 @@ lhtan(x) = x < 0f0 ? 0.001f0 * x :
            x > 1f0 ? 0.001f0 * (x - 1f0) + 1f0 :
                      x
 
-# Matches: lhtan_gradient_kernel
-lhtan_grad(x) = (x > 0f0 && x < 1f0) ? 1f0 : 0.001f0
-
 # Matches: hardtan_activate_kernel
 hardtan(x) = clamp(x, -1f0, 1f0)
 
-# Matches: linear_activate_kernel
-linear(x) = x
+# Matches: linear_activate_kernel (Base.identity)
 
 # Matches: logistic_activate_kernel
 logistic(x) = 1f0 / (1f0 + exp(-x))
@@ -191,7 +187,7 @@ swish(x) = x * σ(x)
 
 # Use this dict to translate the config activation names to function names
 const ACT = Dict(
-    "linear"    => linear,
+    "linear"    => identity,
     "logistic"  => logistic,
     "loggy"     => loggy,
     "relu"      => relu,
@@ -292,11 +288,40 @@ Assert that height and width conform to the model capabilities.
 function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     width = cfgvec[1][2][:width]
     height = cfgvec[1][2][:height]
-    firstconvfilters = cfgvec[2][2][:filters]
+    stride = max_stride(cfgvec)
 
-    @assert (mod(width, firstconvfilters) == 0) "Model width $width not compatible with first conv size of filters=$firstconvfilters. Width should be an integer multiple of $firstconvfilters"
-    @assert (mod(height, firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of $firstconvfilters"
+    @assert (mod(width, stride) == 0) "Model width $width is not an integer multiple of the network's maximum stride ($stride)"
+    @assert (mod(height, stride) == 0) "Model height $height is not an integer multiple of the network's maximum stride ($stride)"
     return true
+end
+
+"""
+    max_stride(cfgvec)
+
+Compute the network's largest cumulative downsampling factor (e.g. 32 for
+most YOLO models, 64 for four-headed models like yolov4-p6) by walking the
+layer blocks and tracking each layer's downsample relative to the input.
+"""
+function max_stride(cfgvec::Vector{<:Pair})
+    scales = Int[] # downsample factor of each layer's output
+    for (idx, (blocktype, block)) in enumerate(cfgvec[2:end])
+        prev = idx == 1 ? 1 : scales[idx-1]
+        s = if blocktype === :convolutional || blocktype === :maxpool
+            prev * get(block, :stride, 1)
+        elseif blocktype === :upsample
+            max(1, prev ÷ get(block, :stride, 2))
+        elseif blocktype === :reorg
+            prev * get(block, :stride, 2)
+        elseif blocktype === :route
+            layers = block[:layers]
+            l1 = layers isa Number ? layers : layers[1]
+            scales[l1 < 0 ? idx + l1 : l1 + 1]
+        else # shortcut, yolo, region, ... keep the previous layer's scale
+            prev
+        end
+        push!(scales, s)
+    end
+    return maximum(scales)
 end
 
 _broadcast(act) = x -> broadcast!(act, x, x)
@@ -374,10 +399,13 @@ mutable struct Yolo <: AbstractModel
         seen, seen_images = if dummy
             Int32(0), Int32(0)
         elseif old_darknet
-            reinterpret(Int32, read(weightbytes, 4*1)), 0
+            only(reinterpret(Int32, read(weightbytes, 4*1))), Int32(0)
         else
             reinterpret(Int32, read(weightbytes, 4*2))
         end
+        # training metadata; read to advance the stream, kept for reference
+        cfg[:seen] = Int(first(seen))
+        cfg[:seen_images] = Int(first(seen_images))
         cfg[:batchsize] = batchsize
         cfg[:output] = []
 
@@ -477,7 +505,7 @@ mutable struct Yolo <: AbstractModel
                 !silent && prettyprint(["\n($(length(fn))) ","route($(join(indices, ",")))"," => "],[:blue,:cyan,:green])
             elseif blocktype === :shortcut
                 idx = block[:from] + cfg_idx
-                act = haskey(block, :activation) ? ACT[block[:activation]] : linear
+                act = haskey(block, :activation) ? ACT[block[:activation]] : identity
                 push!(fn, (idx, :add, act))
                 push!(ch, ch[end])
                 !silent && prettyprint(["\n($cfg_idx) ","shortcut($idx,$cfg_idx)"," => "],[:blue,:cyan,:green])

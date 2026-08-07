@@ -1,8 +1,8 @@
-struct AllocWrappedModel
-    model::AbstractModel
-    allocator::AllocArrays.Allocator
-    T
-    model_aa::AbstractModel
+struct AllocWrappedModel{M<:AbstractModel,A<:AllocArrays.Allocator,MA<:AbstractModel}
+    model::M
+    allocator::A
+    T::Type
+    model_aa::MA
 end
 function Base.show(io::IO, wm::AllocWrappedModel)
     println(io, "AllocWrappedModel")

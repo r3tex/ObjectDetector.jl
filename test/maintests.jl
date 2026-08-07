@@ -122,10 +122,16 @@ include("resrefs.jl")
             dark_sorted = sortslices(darkres_xyxy, dims=2, by = x -> x[1])
             julia_sorted = sortslices(juliares, dims=2, by = x -> x[1])
 
-            ref_dark_sorted =  get!(RES_REFS, "dn_$(modelname)_$(imagename)", dark_sorted)
-            ref_julia_sorted = get!(RES_REFS, "od_$(modelname)_$(imagename)", julia_sorted)
-            @test dark_sorted ≈ ref_dark_sorted atol=0.05
-            @test julia_sorted ≈ ref_julia_sorted atol=0.05
+            # missing references are a hard failure (previously they were
+            # silently self-blessed); regenerate via dev/generate_test_references.jl
+            refkey_dn = "dn_$(modelname)_$(imagename)"
+            refkey_od = "od_$(modelname)_$(imagename)"
+            @test haskey(RES_REFS, refkey_dn)
+            @test haskey(RES_REFS, refkey_od)
+            if haskey(RES_REFS, refkey_dn) && haskey(RES_REFS, refkey_od)
+                @test dark_sorted ≈ RES_REFS[refkey_dn] atol=0.05
+                @test julia_sorted ≈ RES_REFS[refkey_od] atol=0.05
+            end
 
             dark_bbox = dark_sorted[1:4, :]
             julia_bbox = julia_sorted[1:4, :]
@@ -196,6 +202,12 @@ end
 end
 
 @testset "Custom cfg's" begin
+    @testset "max_stride" begin
+        mdir = ObjectDetector.YOLO.models_dir()
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov3.cfg"))) == 32
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov2.cfg"))) == 32
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov4-p6.cfg"))) == 64
+    end
     @testset "overridecfg! non-net layers" begin
         cfgvec = ObjectDetector.YOLO.cfgread(joinpath(ObjectDetector.YOLO.models_dir(), "yolov3.cfg"))
         ObjectDetector.YOLO.overridecfg!(cfgvec, [(:yolo, 3, :classes, 2), (:net, 1, :width, 512)])

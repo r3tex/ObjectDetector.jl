@@ -21,6 +21,19 @@
 - NMS output columns are now ordered by batch, then ascending class id, then descending
   score (classes were previously in first-appearance order).
 
+### Quality
+- `benchmark()` moved behind a package extension: load `BenchmarkTools` and `PrettyTables`
+  to use it. It is now keyed by model name, covers all models, and its table printing works
+  under PrettyTables v3.
+- Added a precompile workload: time-to-first-inference drops from ~13s to under 1s.
+- Input size validation now checks against the network's actual maximum stride (computed
+  from the cfg) instead of the first conv's filter count, which wrongly rejected valid
+  sizes (e.g. yolov7x at 416).
+- Flux compat narrowed to tested versions (0.14.1+).
+- Missing test references now fail the test suite instead of being silently self-blessed;
+  the reference generator is committed at `dev/generate_test_references.jl`.
+- Assorted dead code removed.
+
 ### Bugfixes
 - Fix the reorg (passthrough) layer and the batchnorm read order for pre-0.2 darknet weight
   headers, and apply softmax (not sigmoid) to region-layer class scores when the cfg enables

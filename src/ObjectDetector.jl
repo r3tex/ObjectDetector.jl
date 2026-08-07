@@ -8,8 +8,6 @@ using ImageFiltering
 using ImageTransformations
 using ImageCore
 
-using BenchmarkTools
-using PrettyTables
 using ImageDraw
 using PrecompileTools
 using TimerOutputs
@@ -19,6 +17,22 @@ using Cairo
 using Colors
 
 const to = TimerOutput()
+
+"""
+    benchmark(; models = sort(collect(keys(YOLO.YOLO_MODELS))), kw...)
+
+Benchmark the pretrained models. Requires BenchmarkTools and PrettyTables to
+be loaded first: `using BenchmarkTools, PrettyTables`.
+"""
+function benchmark end
+
+function __init__()
+    Base.Experimental.register_error_hint(MethodError) do io, exc, argtypes, kwargs
+        if exc.f === benchmark
+            print(io, "\nObjectDetector.benchmark requires BenchmarkTools and PrettyTables: run `using BenchmarkTools, PrettyTables` first.")
+        end
+    end
+end
 
 abstract type AbstractModel end
 function get_input_size end
@@ -35,8 +49,15 @@ import .YOLO
 
 include("utils.jl")
 
-if !isdefined(Base, :get_extension)
-    include("../ext/CUDAExt.jl")
+@setup_workload begin
+    @compile_workload begin
+        # A dummy-weight model needs no downloads and exercises cfg parsing,
+        # chain construction, and the full inference + NMS path
+        model = YOLO.Yolo(joinpath(YOLO.models_dir(), "yolov3-tiny.cfg"), nothing, 1;
+                          silent=true, cfgchanges=[(:net, 1, :width, 160), (:net, 1, :height, 160)])
+        batch = emptybatch(model)
+        model(batch; detect_thresh=0.0, overlap_thresh=0.5)
+    end
 end
 
 end #module
