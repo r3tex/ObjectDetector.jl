@@ -196,6 +196,12 @@ end
 end
 
 @testset "Custom cfg's" begin
+    @testset "max_stride" begin
+        mdir = ObjectDetector.YOLO.models_dir()
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov3.cfg"))) == 32
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov2.cfg"))) == 32
+        @test ObjectDetector.YOLO.max_stride(ObjectDetector.YOLO.cfgread(joinpath(mdir, "yolov4-p6.cfg"))) == 64
+    end
     @testset "overridecfg! non-net layers" begin
         cfgvec = ObjectDetector.YOLO.cfgread(joinpath(ObjectDetector.YOLO.models_dir(), "yolov3.cfg"))
         ObjectDetector.YOLO.overridecfg!(cfgvec, [(:yolo, 3, :classes, 2), (:net, 1, :width, 512)])

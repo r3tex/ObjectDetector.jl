@@ -288,11 +288,40 @@ Assert that height and width conform to the model capabilities.
 function assertdimconform(cfgvec::Vector{Pair{Symbol,Dict{Symbol,T}}}) where {T}
     width = cfgvec[1][2][:width]
     height = cfgvec[1][2][:height]
-    firstconvfilters = cfgvec[2][2][:filters]
+    stride = max_stride(cfgvec)
 
-    @assert (mod(width, firstconvfilters) == 0) "Model width $width not compatible with first conv size of filters=$firstconvfilters. Width should be an integer multiple of $firstconvfilters"
-    @assert (mod(height, firstconvfilters) == 0) "Model height $height not compatible with first conv size of filters=$firstconvfilters. Height should be an integer multiple of $firstconvfilters"
+    @assert (mod(width, stride) == 0) "Model width $width is not an integer multiple of the network's maximum stride ($stride)"
+    @assert (mod(height, stride) == 0) "Model height $height is not an integer multiple of the network's maximum stride ($stride)"
     return true
+end
+
+"""
+    max_stride(cfgvec)
+
+Compute the network's largest cumulative downsampling factor (e.g. 32 for
+most YOLO models, 64 for four-headed models like yolov4-p6) by walking the
+layer blocks and tracking each layer's downsample relative to the input.
+"""
+function max_stride(cfgvec::Vector{<:Pair})
+    scales = Int[] # downsample factor of each layer's output
+    for (idx, (blocktype, block)) in enumerate(cfgvec[2:end])
+        prev = idx == 1 ? 1 : scales[idx-1]
+        s = if blocktype === :convolutional || blocktype === :maxpool
+            prev * get(block, :stride, 1)
+        elseif blocktype === :upsample
+            max(1, prev ÷ get(block, :stride, 2))
+        elseif blocktype === :reorg
+            prev * get(block, :stride, 2)
+        elseif blocktype === :route
+            layers = block[:layers]
+            l1 = layers isa Number ? layers : layers[1]
+            scales[l1 < 0 ? idx + l1 : l1 + 1]
+        else # shortcut, yolo, region, ... keep the previous layer's scale
+            prev
+        end
+        push!(scales, s)
+    end
+    return maximum(scales)
 end
 
 _broadcast(act) = x -> broadcast!(act, x, x)

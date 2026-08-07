@@ -54,8 +54,8 @@ Darknet is row-major, so the image matrix needs to have its first and second dim
 permuted before being passed to batch. Otherwise features may not be detected due to
 being rotated 90º. The function `prepare_image()` includes this conversion automatically.
 
-Also, non-square models can be loaded, but care should be taken to ensure that each
-dimension is an integer multiple of the filter size of the first conv layer (typically 16 or 32).
+Also, non-square models can be loaded, but each dimension must be an integer
+multiple of the network's maximum stride (32 for most models, 64 for `v4_p6`).
 
 
 ### CPU performance tips
