@@ -171,36 +171,25 @@ function draw_boxes!(img::AbstractArray, model::YOLO.Yolo, padding::AbstractArra
 end
 
 """
-    benchmark(;select = [1,2,6], reverseAfter:Bool=false)
+    benchmark(; models = sort(collect(keys(YOLO.YOLO_MODELS))), reverseAfter::Bool=false)
 
-Convenient benchmarking
+Convenient benchmarking of the pretrained models. `models` is a vector of
+`YOLO_MODELS` keys; each is loaded at its default (native) input size unless
+`w`/`h` are passed through via keyword arguments.
 """
-function benchmark(;select = [1,2,3,4,6,7,8,9], reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
-    pretrained_list = [
-                        YOLO.v2_tiny_416_COCO,
-                        YOLO.v3_tiny_416_COCO,
-                        YOLO.v4_tiny_416_COCO,
-                        YOLO.v7_tiny_416_COCO,
-                        YOLO.v2_416_COCO,
-                        YOLO.v3_416_COCO,
-                        YOLO.v3_spp_416_COCO,
-                        YOLO.v4_416_COCO,
-                        YOLO.v7_416_COCO,
-                        ][select]
-    reverseAfter && (pretrained_list = vcat(pretrained_list, reverse(pretrained_list)))
-
+function benchmark(; models = sort(collect(keys(YOLO.YOLO_MODELS))), reverseAfter::Bool = false, img = rand(RGB,416,416), verbose=true, kw...)
+    reverseAfter && (models = vcat(models, reverse(models)))
 
     header = ["Model", "loaded?", "load time (s)", "#results", "run time (s)", "run time (fps)", "allocations"]
-    table = Array{Any}(undef, length(pretrained_list), 7)
-    for (i, pretrained) in pairs(pretrained_list)
-        modelname = string(pretrained)
+    table = Array{Any}(undef, length(models), 7)
+    for (i, modelname) in pairs(models)
         verbose && @info "Loading and running $modelname"
         table[i,:] = [modelname false "-" "-" "-" "-" "-"]
 
         loaded = true
         t_load = @elapsed begin
             mod = try
-                pretrained(;silent=true, kw...)
+                YOLO.yolo_model(modelname; silent=true, kw...)
             catch ex
                 loaded = false
                 @warn "Failed to load $modelname: $ex"
