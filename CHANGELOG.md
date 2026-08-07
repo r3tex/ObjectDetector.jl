@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.2.0 - 2026-08-07
+
+Deep review series: #131 (bugfixes), #132 (performance), #137 (new models), #138 (quality).
 
 ### New models
 - Add the Scaled-YOLOv4 family and yolov7x, all with official COCO weights:
