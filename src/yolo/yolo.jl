@@ -7,6 +7,7 @@ models_dir() = joinpath(@__DIR__, "models")
 
 import Flux
 import Flux: gpu, cpu, σ
+import Adapt
 using LazyArtifacts
 using TimerOutputs
 using AllocArrays: AllocArray, BumperAllocator
@@ -68,11 +69,15 @@ function cfgread(file::String)
 end
 
 """
-    readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool)
+    readweights(bytes::IOBuffer, kern::Int, ch::Int, fl::Int, bn::Bool; rand_init=false)
 
-Read the YOLO binary weights
+Read the YOLO binary weights. When `bytes` is `nothing` dummy weights are
+generated instead: all-ones by default (cheap, deterministic, used for
+precompilation), or scaled random values when `rand_init=true` (used for
+layers left unloaded during transfer learning, matching darknet's random
+initialization of fresh layers).
 """
-function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool)
+function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int, bn::Bool; rand_init::Bool=false)
     function read_array(io::IOBuffer, n::Int)
         expected = n * sizeof(Float32)
         data = read(io, expected)
@@ -82,15 +87,18 @@ function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int
         Vector(reinterpret(Float32, data))
     end
     dummy = isnothing(bytes)
+    # darknet uses scale*randn with scale=sqrt(2/(k*k*ch)); a uniform spread of
+    # the same scale serves the same purpose here
+    randweights(dims...) = (rand(Float32, dims...) .- 0.5f0) .* (2f0 * sqrt(2f0 / (kern * kern * ch)))
     if bn
         # Both PJReddie darknet and the AlexeyAB fork write, for every
         # darknet version: biases, scales, means, vars (load_convolutional_weights)
-        bb = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # bias
+        bb = dummy ? (rand_init ? zeros(Float32, fl) : ones(Float32, fl)) : read_array(bytes, fl)  # bias
         bw = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # weights (scale)
-        bm = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # mean
+        bm = dummy ? (rand_init ? zeros(Float32, fl) : ones(Float32, fl)) : read_array(bytes, fl)  # mean
         bv = dummy ? ones(Float32, fl) : read_array(bytes, fl)  # variance
         cb = zeros(Float32, fl)  # conv bias (zero when BN is used)
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
+        cw = dummy ? (rand_init ? randweights(kern, kern, ch, fl) : ones(Float32, kern, kern, ch, fl)) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         if any(<(0), bv)
             @warn "Clipping negative BN variances. This could indicate an issue with the weights file/cfgfile" count_negative = count(<(0), bv)  minval = minimum(bv)
@@ -98,8 +106,8 @@ function readweights(bytes::Union{IOBuffer,Nothing}, kern::Int, ch::Int, fl::Int
         end
         return cw, cb, bb, bw, bm, bv
     else
-        cb = dummy ? ones(Float32, fl) : read_array(bytes, fl)
-        cw = dummy ? ones(Float32, kern, kern, ch, fl) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
+        cb = dummy ? (rand_init ? zeros(Float32, fl) : ones(Float32, fl)) : read_array(bytes, fl)
+        cw = dummy ? (rand_init ? randweights(kern, kern, ch, fl) : ones(Float32, kern, kern, ch, fl)) : reshape(reinterpret(Float32, read_array(bytes, kern*kern*ch*fl)), kern, kern, ch, fl)
         cw = Float32.(flip(cw))
         return cw, cb, 0.0, 0.0, 0.0, 0.0
     end
@@ -324,20 +332,69 @@ function max_stride(cfgvec::Vector{<:Pair})
     return maximum(scales)
 end
 
-_broadcast(act) = x -> broadcast!(act, x, x)
-_upsample(stride) = x -> upsample(x, stride)
-_reorg(stride) = x -> reorg(x, stride)
-_route(val) = x -> val
-_route(val, channels) = x -> val[:, :, channels, :]
-_add(val, act) = x -> broadcast!((a, b) -> act(a + b), x, x, val)
-_cat(arrays::AbstractArray...) = x -> cat(arrays...; dims=3)
+# Layer building blocks. These are callable structs rather than closures so
+# that the training path (see train.jl) can dispatch on them and run a pure,
+# non-mutating equivalent: the inference call methods below mutate buffers for
+# speed, and the skip layers additionally record which chain output (`src`)
+# they read from, since the captured buffer (`buf`) is only valid during the
+# buffered inference forward pass.
+struct BroadcastActivation{F}
+    act::F
+end
+(l::BroadcastActivation)(x) = broadcast!(l.act, x, x)
+
+struct Upsample
+    stride::Int
+end
+(l::Upsample)(x) = upsample(x, l.stride)
+
+struct Reorg
+    stride::Int
+end
+(l::Reorg)(x) = reorg(x, l.stride)
+
+struct RouteLayer{A}
+    buf::A
+    src::Int                                # chain index the route reads from
+    channels::Union{Nothing,UnitRange{Int}} # nothing = whole layer, else grouped route slice
+end
+(l::RouteLayer)(x) = l.channels === nothing ? l.buf : l.buf[:, :, l.channels, :]
+
+struct ShortcutAdd{A,F}
+    buf::A
+    src::Int # chain index the shortcut reads from
+    act::F
+end
+(l::ShortcutAdd)(x) = broadcast!((a, b) -> l.act(a + b), x, x, l.buf)
+
+struct CatLayer{T<:Tuple,N}
+    bufs::T
+    srcs::NTuple{N,Int} # chain indices the concatenation reads from
+end
+(l::CatLayer)(x) = cat(l.bufs...; dims=3)
 
 ## Flux maxpool approach
-function _maxpool(siz, stride)
-    # For a 2x2 pool, use explicit padding to preserve dimensions.
-    pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : div(siz - 1, 2)
-    return x -> maxpool(x; siz, stride, pad)
+struct MaxPoolLayer
+    siz::Int
+    stride::Int
+    pad::NTuple{4,Int}
 end
+function MaxPoolLayer(siz, stride)
+    # For a 2x2 pool, use explicit padding to preserve dimensions.
+    pad = siz == 2 && stride == 1 ? (0, 1, 0, 1) : ntuple(_ -> div(siz - 1, 2), 4)
+    return MaxPoolLayer(siz, stride, pad)
+end
+(l::MaxPoolLayer)(x) = maxpool(x; siz=l.siz, stride=l.stride, pad=l.pad)
+
+# the skip layers hold references to inference buffers, which must be adapted
+# alongside the model (e.g. for AllocArrays/GPU wrapping) but must never be
+# treated as trainable parameters
+Adapt.@adapt_structure RouteLayer
+Adapt.@adapt_structure ShortcutAdd
+Adapt.@adapt_structure CatLayer
+Flux.trainable(::RouteLayer) = (;)
+Flux.trainable(::ShortcutAdd) = (;)
+Flux.trainable(::CatLayer) = (;)
 function maxpool(x; siz, stride, pad)
     return Flux.maxpool(x, Flux.PoolDims(x, (siz, siz); stride = (stride, stride), padding = pad))
 end
@@ -356,7 +413,9 @@ mutable struct Yolo <: AbstractModel
     Yolo(cfg::Dict{Symbol, Any} , chain::Flux.Chain, W::Dict{Int64}, out::Array{Dict{Symbol, Any}, 1}, uses_gpu::Bool) = new(cfg, chain, W, out, uses_gpu)
 
     # The constructor takes the official YOLO config files and weight files
-    Yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false, allocator=nothing) = begin
+    Yolo(cfgfile::String, weightfile::Union{Nothing,String}, batchsize::Int = 1; silent::Bool = false, cfgchanges=nothing, use_gpu::Bool=true, disallow_bumper::Bool = false, allocator=nothing,
+         weights_stop_layer::Union{Nothing,Int}=nothing, allow_partial_weights::Bool=false,
+         trainable_batchnorm::Bool=false) = begin
         # load dummy weights (avoids download for precompilation)
         dummy = isnothing(weightfile)
 
@@ -380,6 +439,10 @@ mutable struct Yolo <: AbstractModel
 
         cfg = cfgvec[1][2]
         cfg[:cfgname] = basename(cfgfile)
+        # layer blocks kept for saving weights after training. Excludes the
+        # leading [net] block, which is `cfg` itself (a self-reference here
+        # would send recursive walks of the model, e.g. Functors, into a cycle)
+        cfg[:layerblocks] = cfgvec[2:end]
         cfg[:laststage] = any(cfg -> first(cfg) === :region, cfgvec) ? :region : :yolo
         weightbytes = if dummy
             nothing # readweights knows to make up dummy weights if this is nothing
@@ -427,25 +490,45 @@ mutable struct Yolo <: AbstractModel
                 act     = ACT[block[:activation]]
                 acts[cfg_idx] = block[:activation]
                 bn      = haskey(block, :batch_normalize)
+                # transfer learning: random-init layers past the requested stop
+                # layer, or past the end of a truncated (.conv.XX style) file
+                rand_init = (weights_stop_layer !== nothing && cfg_idx > weights_stop_layer) ||
+                            (allow_partial_weights && weightbytes !== nothing && eof(weightbytes))
+                layerbytes = rand_init ? nothing : weightbytes
                 cw, cb, bb, bw, bm, bv = try
-                    readweights(weightbytes, kern, ch[end], filters, bn)
+                    readweights(layerbytes, kern, ch[end], filters, bn; rand_init)
                 catch
                     !silent && println()
                     @error "Error reading weights for layer $cfg_idx of type $blocktype. Check the weights file." kern ch[end] filters pad stride act bn
                     rethrow()
                 end
-                if bn
-                    # Fold batchnorm into the conv weights and bias (as darknet's
-                    # fuse_conv_batchnorm does): at inference BN is the affine map
-                    # y -> (y - mean) / sqrt(var + eps) * scale + bias, which per
-                    # output channel folds exactly into the conv kernel and bias.
-                    # This removes a full read+write pass over every conv output.
-                    bnscale = bw ./ sqrt.(bv .+ 1f-5)
-                    cw = cw .* reshape(bnscale, 1, 1, 1, :)
-                    cb = bb .- bm .* bnscale
+                if bn && trainable_batchnorm
+                    # Keep a live BatchNorm layer so that batch statistics
+                    # normalize activations during training and the affine
+                    # params train (needed for from-scratch training). Slower
+                    # at inference than the folded form below; save_weights +
+                    # reload without `trainable_batchnorm` recovers full speed.
+                    push!(stack, maybe_gpu(Flux.Conv(cw, false; stride = stride, pad = pad, dilation = 1)))
+                    bnl = Flux.BatchNorm(filters)
+                    bnl.β .= bb
+                    bnl.γ .= bw
+                    bnl.μ .= bm
+                    bnl.σ² .= bv
+                    push!(stack, maybe_gpu(bnl))
+                else
+                    if bn
+                        # Fold batchnorm into the conv weights and bias (as darknet's
+                        # fuse_conv_batchnorm does): at inference BN is the affine map
+                        # y -> (y - mean) / sqrt(var + eps) * scale + bias, which per
+                        # output channel folds exactly into the conv kernel and bias.
+                        # This removes a full read+write pass over every conv output.
+                        bnscale = bw ./ sqrt.(bv .+ 1f-5)
+                        cw = cw .* reshape(bnscale, 1, 1, 1, :)
+                        cb = bb .- bm .* bnscale
+                    end
+                    push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
                 end
-                push!(stack, maybe_gpu(Flux.Conv(cw, cb; stride = stride, pad = pad, dilation = 1)))
-                push!(stack, _broadcast(act))
+                push!(stack, BroadcastActivation(act))
                 push!(fn, Flux.Chain(stack...))
                 push!(ch, filters)
                 !silent && prettyprint(["($cfg_idx) ","conv($kern,$(ch[end-1])->$(ch[end]))"," => "],[:blue,:white,:green])
@@ -455,23 +538,18 @@ mutable struct Yolo <: AbstractModel
                 end
             elseif blocktype === :upsample
                 stride = block[:stride]
-                push!(fn, _upsample(stride)) # upsample using Kronecker tensor product
+                push!(fn, Upsample(stride)) # upsample using Kronecker tensor product
                 push!(ch, ch[end])
                 !silent && prettyprint(["($cfg_idx) ","upsample($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :reorg
                 stride = block[:stride]
-                push!(fn, _reorg(stride)) # reorg to (w/stride, h/stride, c*stride^2)
+                push!(fn, Reorg(stride)) # reorg to (w/stride, h/stride, c*stride^2)
                 push!(ch, ch[end] * stride^2)
                 !silent && prettyprint(["($cfg_idx) ","reorg($stride)"," => "],[:blue,:magenta,:green])
             elseif blocktype === :maxpool
                 siz = block[:size]
                 stride = block[:stride]
-                push!(fn, _maxpool(siz, stride))
-                # push!(fn, x -> begin
-                #     _out = _maxpool(siz, stride)(x)
-                #     @info "Layer maxpool(siz=$siz, stride=$stride) $(size(x)) => $(size(_out))"
-                #     return _out
-                # end)
+                push!(fn, MaxPoolLayer(siz, stride))
                 push!(ch, ch[end])
                 !silent && prettyprint(["($cfg_idx) ","maxpool($siz,$stride)"," => "],[:blue,:magenta,:green])
             # for these layers don't push a function to fn, just note the skip-type and where to skip from
@@ -525,8 +603,9 @@ mutable struct Yolo <: AbstractModel
             end
         end
 
-        # Sanity check that all weights were used
-        if weightbytes !== nothing && !eof(weightbytes)
+        # Sanity check that all weights were used (not applicable when loading
+        # was deliberately stopped early for transfer learning)
+        if weightbytes !== nothing && weights_stop_layer === nothing && !eof(weightbytes)
             fsize = filesize(weightfile)
             read_bytes = position(weightbytes)
             error("Not all weights were read. Check that the weights file matches the cfg file. Read $(read_bytes) bytes. Filesize $(fsize) bytes.")
@@ -577,17 +656,17 @@ mutable struct Yolo <: AbstractModel
                             group_size = size(W[arrayidx], 3) ÷ groups
                             group_start = group_id * group_size + 1
                             group_end = (group_id+1) * group_size
-                            fn[j] = _route(W[arrayidx], group_start:group_end)
+                            fn[j] = RouteLayer(W[arrayidx], arrayidx, group_start:group_end)
                         else
-                            fn[j] = _route(W[arrayidx])
+                            fn[j] = RouteLayer(W[arrayidx], arrayidx, nothing)
                         end
                     elseif skip_type === :add
                         arrayidx = layer2out[fn[j][1]]
                         act = fn[j][3]
-                        fn[j] = _add(W[arrayidx], act)
+                        fn[j] = ShortcutAdd(W[arrayidx], arrayidx, act)
                     elseif skip_type === :cat
-                        indices = fn[j][1]
-                        fn[j] = _cat([W[layer2out[ind]] for ind in indices]...)
+                        srcs = Tuple(layer2out[ind] for ind in fn[j][1])
+                        fn[j] = CatLayer(Tuple(W[s] for s in srcs), srcs)
                     else
                         error("Unknown skip layer $skip_type")
                     end
@@ -936,5 +1015,6 @@ function (yolo::Yolo)(img::T; detect_thresh=nothing, overlap_thresh=nothing, sho
 end
 
 include(joinpath(@__DIR__, "pretrained.jl"))
+include(joinpath(@__DIR__, "train.jl"))
 
 end #module

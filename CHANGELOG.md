@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Training support
+- Add `train!` for training `[yolo]`-output models — classic decode (v3 family, v4,
+  v4-tiny) and `new_coords=1` scaled decode (scaled-YOLOv4 family, v7 family) —
+  with a CIoU + BCE loss, best-anchor target assignment, and a differentiable
+  non-mutating forward path alongside the existing fast buffered inference path.
+- Add `trainable_batchnorm=true` construction mode keeping live batchnorm layers for
+  from-scratch training (default remains folded batchnorm for fastest inference);
+  plus `warmup_batches` (darknet-style burn-in) and `flip_augment` options.
+- Add `TrainSample`, `load_darknet_dataset`/`load_darknet_labels` (darknet label
+  format), and letterbox-aware box transforms for batch assembly.
+- Add `save_weights` to write darknet-format `.weights` files that round-trip with
+  the same cfg (batchnorm-folded convs are written with identity batchnorm).
+- Add transfer-learning weight loading: `weights_stop_layer` (random-init layers past
+  a backbone split, enabling custom class counts via `cfgchanges`) and
+  `allow_partial_weights` (truncated `.conv.XX` backbone files).
+
 ## v1.2.0 - 2026-08-07
 
 Deep review series: #131 (bugfixes), #132 (performance), #137 (new models), #138 (quality).

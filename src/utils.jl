@@ -13,6 +13,12 @@ function emptybatch(model::T) where {T<:AbstractModel}
     end
 end
 
+# training entry points reach through the allocator wrapper to the raw model,
+# whose conv weight arrays are shared with the wrapped copy
+train!(wm::AllocWrappedModel, data; kw...) = train!(wm.model, data; kw...)
+save_weights(wm::AllocWrappedModel, path::AbstractString) = save_weights(wm.model, path)
+make_training_batch(wm::AllocWrappedModel, samples; kw...) = make_training_batch(wm.model, samples; kw...)
+
 function gen_class_colors(model::YOLO.Yolo)
     classes = get_cfg(model)[:output][1][:classes]
     seed = [RGB{N0f8}(0,0,0), RGB{N0f8}(1,1,1)]

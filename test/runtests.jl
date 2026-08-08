@@ -15,4 +15,5 @@ using ObjectDetector
 @testset "ObjectDetector" verbose=true begin
     include("prepare_image.jl")
     include("maintests.jl")
+    include("trainingtests.jl")
 end
