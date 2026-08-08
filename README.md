@@ -8,7 +8,7 @@ Other less standard models may work also.
 
 Note that all supported models have result parity with [AlexeyAB/darknet](https://github.com/AlexeyAB/darknet), and are directly tested against [Darknet.jl](https://github.com/IanButterworth/Darknet.jl) (see tests)
 
-Training using ObjectDetector is currently unproven/untested.
+Training (fine-tuning and from-scratch) is supported for the v3, v4 and v7 model families — see [Training](#training) below.
 
 ## Installation
 
@@ -94,6 +94,72 @@ save("result.png", imgBoxes)
 ```
 ![dog-cycle-car with boxes](test/results/dog-cycle-car/v3_COCO_out_od.png)
 
+
+## Training
+
+Training is supported for `[yolo]`-output models, both classic decode (`v3` family,
+`v4`, `v4-tiny`) and `new_coords=1` scaled decode (`v4-csp` and the rest of the
+scaled-YOLOv4 family, `v7` family). The yolov2 `[region]` models are not trainable.
+The loss is a modern simplified YOLO loss (CIoU box loss + binary cross-entropy
+objectness/class losses with best-anchor target assignment), not a reimplementation
+of darknet's exact loss.
+
+By default batchnorm is folded into the conv weights at load time, so training
+behaves like fine-tuning with frozen batchnorm statistics — ideal for adapting
+pretrained weights. For from-scratch training, construct the model with
+`trainable_batchnorm=true` to keep live, trainable batchnorm layers (see below).
+
+### Fine-tuning on a custom dataset
+
+Datasets use darknet conventions: normalized `[class, cx, cy, w, h]` boxes, either
+in-memory via `TrainSample`, or loaded from image + `.txt` label file pairs:
+
+```julia
+using ObjectDetector, FileIO, ImageIO
+
+# yolov3-tiny with a fresh 2-class head, backbone initialized from pretrained
+# COCO weights (block 15 is the yolov3-tiny.conv.15 backbone split)
+cfg, weights = YOLO.YOLO_MODELS["v3_tiny_COCO"]()
+yolomod = YOLO.Yolo(cfg, weights, 1;
+    weights_stop_layer = 15,
+    cfgchanges = [(:yolo, 1, :classes, 2), (:yolo, 2, :classes, 2),
+                  (:convolutional, 10, :filters, 21), (:convolutional, 13, :filters, 21)])
+                  # head conv filters = anchors_per_head * (5 + classes)
+
+data = load_darknet_dataset("dataset/images", "dataset/labels") # paired .txt label files
+
+result = train!(yolomod, data;
+    epochs = 50, batchsize = 8, lr = 1e-3,
+    image_loader = FileIO.load,
+    checkpoint_dir = "checkpoints") # saves darknet-format .weights each epoch
+
+result.losses # mean loss per epoch
+```
+
+The model is updated in place, so it can be used for inference as usual afterwards.
+`save_weights(yolomod, "trained.weights")` writes darknet-format weights that reload
+with the same cfg (and the same `cfgchanges`). Truncated darknet backbone files
+(e.g. `yolov3-tiny.conv.15`) can also be loaded directly with
+`allow_partial_weights=true`, which randomly initializes the remaining layers.
+
+### Training from scratch
+
+```julia
+yolomod = YOLO.Yolo(cfg, nothing, 1;
+    weights_stop_layer = 0,      # random-init all layers
+    trainable_batchnorm = true,  # live batchnorm (needed for from-scratch convergence)
+    cfgchanges = [...])          # classes/filters as above
+
+train!(yolomod, data;
+    epochs = 300, batchsize = 16, lr = 1e-3,
+    warmup_batches = 1000,       # linear LR ramp (darknet burn-in)
+    flip_augment = true,         # random horizontal mirroring
+    image_loader = FileIO.load)
+```
+
+`save_weights` on a `trainable_batchnorm` model writes true darknet batchnorm
+parameters; reloading without `trainable_batchnorm` folds them for fastest
+inference, with equivalent outputs.
 
 ## Pretrained Models
 The darknet YOLO models from https://pjreddie.com/darknet/yolo/ that are pretrained on the COCO dataset are available:
