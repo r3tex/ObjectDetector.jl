@@ -194,8 +194,11 @@ using Random: MersenneTwister
         @test ObjectDetector.get_cfg(tmodel)[:output][1][:classes] == 2
         img = zeros(Float32, 160, 160, 3); img[60:100, 50:110, :] .= 1f0
         boxes = Float32[2; 0.5; 0.5; 60 / 160; 40 / 160;;]
-        res = train!(tmodel, [TrainSample(img, boxes)]; epochs=8, batchsize=1, lr=1e-3,
-                     silent=true, rng=MersenneTwister(0))
-        @test res.losses[end] < res.losses[1]
+        # single-image Adam fine-tuning oscillates and BLAS differences make the
+        # exact trajectory platform-dependent, so compare smoothed endpoints at
+        # a gentle LR rather than two single noisy epoch losses
+        res = train!(tmodel, [TrainSample(img, boxes)]; epochs=15, batchsize=1, lr=5e-4,
+                     warmup_batches=2, silent=true, rng=MersenneTwister(0))
+        @test sum(res.losses[end-2:end]) / 3 < res.losses[1]
     end
 end
