@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+ObjectDetector = "3dfc1049-5314-49cf-8447-288dfd02f9fb"
+
+[compat]
+Documenter = "1"
