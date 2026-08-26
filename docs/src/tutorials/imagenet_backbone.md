@@ -28,7 +28,8 @@ Reading `yolov3-tiny.cfg`, the split is:
 | 15-23 | detection convolutions, route, upsample, two `[yolo]` heads | needs boxes |
 
 Layers 0-12 (7 convolutions, ending at 1024 channels) are the part both detection
-branches share; the example takes `--nconv` to choose between them.
+branches share; the example takes `--stop_layer` to choose between them, counting
+cfg blocks the same way `weights_stop_layer` does.
 
 ## The data
 
@@ -143,12 +144,16 @@ yolo = YOLO.Yolo(cfg, nothing, 1; silent = true, use_gpu = false,
 
 Its `chain` is a `Chain` of sub-chains, grouped so the skip layers can find their
 buffers. Flattening it gives a plain layer list, and the trunk is the prefix up to
-the `nconv`-th convolution:
+the last convolution of block `stop_layer`:
 
 ```julia
-function backbone_layers(yolo; nconv::Int = 9)
+function backbone_layers(yolo; stop_layer::Int = 15)
+    model = yolo_model(yolo)
+    blocks = model.cfg[:layerblocks]
+    nconv = count(b -> first(b) === :convolutional, blocks[1:stop_layer])
+
     flat = Any[]
-    YOLO._flatten_layers!(flat, yolo_model(yolo).chain)
+    YOLO._flatten_layers!(flat, model.chain)
     layers = Any[]
     seen = 0
     for l in flat
@@ -160,8 +165,9 @@ function backbone_layers(yolo; nconv::Int = 9)
 end
 ```
 
-For `yolov3-tiny.cfg` that is 33 flattened layers for `nconv = 9`, or 27 for
-`nconv = 7`.
+`stop_layer` counts cfg blocks, the same unit `weights_stop_layer` uses, so the
+two halves of the round trip speak the same language. For `yolov3-tiny.cfg` that
+is 33 flattened layers at `stop_layer = 15`, or 27 at `stop_layer = 13`.
 
 One layer has to be swapped. The inference path uses `YOLO.BroadcastActivation`,
 which writes its result back into its own input:
@@ -171,25 +177,29 @@ which writes its result back into its own input:
 ```
 
 That is exactly what you want for inference throughput and exactly what Zygote
-cannot differentiate through. The package already handles this internally with
-`YOLO._pure`; the example does the same thing with a small non-mutating
-stand-in:
+cannot differentiate through. The package already solves this for its own
+training path in `YOLO._pure`, so the example defers to it rather than restating
+the rule:
 
 ```julia
-struct PureActivation{F}
-    act::F
+struct PureActivation{L}
+    layer::L
 end
-(l::PureActivation)(x) = l.act.(x)
+(p::PureActivation)(x) = YOLO._pure(p.layer, (), x)
 
-pure(l::YOLO.BroadcastActivation) = PureActivation(l.act)
+pure(l::YOLO.BroadcastActivation) = PureActivation(l)
 pure(l) = l
 ```
+
+`outs` is empty because the trunk holds no skip layers, and only the activation
+is ever wrapped: `PureActivation` is not a Functors node, so a `Conv` hidden
+inside one would be invisible to `Flux.setup`.
 
 Adding a global-average-pool head gives the classifier Darknet pre-trains with:
 
 ```julia
-function classifier(yolo; nclasses::Int, nconv::Int = 9)
-    layers = map(pure, backbone_layers(yolo; nconv))
+function classifier(yolo; nclasses::Int, stop_layer::Int = 15)
+    layers = map(pure, backbone_layers(yolo; stop_layer))
     channels = size(last(filter(l -> l isa Flux.Conv, layers)).weight, 4)
     backbone = Chain(layers...)
     head = Chain(GlobalMeanPool(), Flux.flatten, Dense(channels => nclasses))
@@ -198,29 +208,29 @@ end
 ```
 
 At 224x224 the five stride-2 max-pools take the feature map to 7x7, and
-`nconv = 9` leaves 512 channels there: 7.74M parameters including the head.
+`stop_layer = 15` leaves 512 channels there: 7.74M parameters including the head.
 
-!!! note "The trunk is shared, the training is not"
+!!! note "The trunk is shared"
     The `Conv` and `BatchNorm` objects in the classifier are the same objects the
-    detector holds. But `Optimisers.update!` is functional: it rebuilds the model
-    around fresh arrays rather than writing through them. So training the
-    classifier does *not* update `yolo`, and the result has to be copied back
-    explicitly.
+    detector holds, and `Flux.update!` writes through them in place, which is what
+    the package's own `train!` relies on. On CPU, training the classifier
+    therefore trains `yolo` directly. On a GPU it does not: `Flux.gpu` copies the
+    arrays to the device, so the trained values have to be brought back.
 
 ## Training
 
 Nothing exotic: `AdamW`, logit cross-entropy, one-hot targets.
 
 ```julia
-model = todevice(classifier(yolo; nclasses = ncls, nconv = opts.nconv))
-state = Optimisers.setup(Optimisers.AdamW(opts.lr), model)
+model = todevice(classifier(yolo; nclasses = ncls, stop_layer = opts.stop_layer))
+state = Flux.setup(Flux.AdamW(opts.lr), model)
 
 for epoch in 1:opts.epochs
     Flux.trainmode!(model)
     for (X, Y) in batches(trainset, ncls; batchsize = opts.batchsize)
         x, y = todevice(X), todevice(Y)
         loss, grads = Flux.withgradient(m -> Flux.logitcrossentropy(m(x), y), model)
-        state, model = Optimisers.update!(state, model, grads[1])
+        Flux.update!(state, model, grads[1])
     end
 end
 ```
@@ -230,7 +240,7 @@ julia --project -t auto train.jl --data /path/to/imagenette2-320 --epochs 5
 ```
 
 Add `--full` to go through `ImageNet(split; dir)` instead of the subset loader,
-and `--nconv 7` to stop at the shared 1024-channel trunk.
+and `--stop_layer 13` to stop at the shared 1024-channel trunk.
 
 ## Results
 
@@ -239,39 +249,43 @@ Metal:
 
 ```
 backend metal, 5 threads | 10 classes, 9469 train / 3925 val images
-yolov3-tiny.cfg: first 9 conv blocks, 7742874 parameters at 224 x 224
-  epoch 1 done in 105.3s | train loss 1.4157 | val loss 1.3569 | val acc 0.562
-  epoch 2 done in  55.5s | train loss 1.0568 | val loss 2.6792 | val acc 0.424
-  epoch 3 done in  54.7s | train loss 0.8928 | val loss 1.0007 | val acc 0.676
-  epoch 4 done in  51.0s | train loss 0.7887 | val loss 0.9428 | val acc 0.701
-  epoch 5 done in  52.0s | train loss 0.7337 | val loss 0.9186 | val acc 0.728
-copied 9 conv blocks into the detector; wrote runs/yolov3-tiny-imagenet.weights
+yolov3-tiny.cfg: cfg blocks 1-15, 7742874 parameters at 224 x 224
+  epoch 1 done in 107.0s | train loss 1.4714 | val loss 1.4871 | val acc 0.537
+  epoch 2 done in  55.6s | train loss 1.0754 | val loss 1.3995 | val acc 0.581
+  epoch 3 done in  55.6s | train loss 0.9349 | val loss 1.0137 | val acc 0.661
+  epoch 4 done in  53.9s | train loss 0.8359 | val loss 0.8996 | val acc 0.706
+  epoch 5 done in  54.4s | train loss 0.7511 | val loss 1.3316 | val acc 0.610
+9 conv blocks in the detector's trunk; wrote runs/yolov3-tiny-imagenet.weights
 ```
 
-About 52 s per epoch after the first, which carries compilation: roughly 180
-images/s including the input pipeline. Top-1 reaches 72.8% on the validation
-split.
+About 55 s per epoch after the first, which carries compilation: roughly 170
+images/s including the input pipeline.
 
-That is a working pipeline, not a pre-trained backbone. 9469 images over 10
-classes is orders of magnitude less data than the trunk wants, and the validation
-loss spiking at epoch 2 while training loss falls steadily is what that looks
-like. A real run is the full 1.28M images for on the order of a hundred epochs;
-the point of the subset is to exercise every part of the pipeline before
-committing to that.
+Read the accuracy column with suspicion. Training loss falls steadily, but
+validation accuracy peaks at 0.706 in epoch 4 and drops to 0.610 in epoch 5, and
+a second run of the same script peaked at 0.728. 9469 images over 10 classes is
+orders of magnitude less data than the trunk wants, and that gap is what
+overfitting on a subset looks like: the number moves several points run to run
+and the last epoch is not reliably the best one.
+
+So this is a working pipeline, not a pre-trained backbone. A real run is the full
+1.28M images for on the order of a hundred epochs; the point of the subset is to
+exercise every part of the pipeline before committing to that.
 
 ## Handing the trunk back to the detector
 
-The trained parameters live in fresh arrays, so they are copied back into the
-model and written out with the package's own [`save_weights`](@ref):
+Training on Metal leaves the trained values on the device, so they are copied
+back into the model before it is written out with the package's own
+[`save_weights`](@ref):
 
 ```julia
 ncopied = copy_backbone!(yolo, Flux.cpu(model)[:backbone])
 save_weights(yolo, joinpath(opts.out, "yolov3-tiny-imagenet.weights"))
 ```
 
-`copy_backbone!` walks the model's flattened layers alongside the trained ones and
-`copyto!`s the convolution kernels and batch-norm parameters in place, matching on
-the layers that carry parameters rather than by position. Because the
+`copy_backbone!` pairs the model's convolutions with the trained ones through the
+package's `conv_bn_layers` and `copyto!`s kernels and batch-norm parameters across.
+On CPU it is a self-copy, since `Flux.update!` has already written through. Because the
 model was built with `trainable_batchnorm = true`, `save_weights` writes true
 Darknet batch-norm parameters rather than folded identity ones.
 
@@ -285,8 +299,8 @@ res = train!(m, samples; epochs = 3, batchsize = 4, lr = 1f-4)
 
 ```
 reloaded ok, input size (416, 416, 3, 1)
-inference ok, result cols: 3
-train! losses: Float32[57.5662, 50.512, 44.8222]
+inference ok, result cols: 112
+train! losses: Float32[58.6824, 53.6988, 49.9396]
 ```
 
 The detection heads are still random, which is what you want: they are the layers

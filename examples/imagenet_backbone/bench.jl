@@ -6,7 +6,7 @@
 # Run one configuration per process: Metal grows its buffer pool over the first
 # few steps, so whichever configuration is measured first in a shared process
 # pays for that and looks far slower than it is.
-using Flux, Optimisers, Printf
+using Flux, Printf
 using ObjectDetector, ObjectDetector.YOLO
 include("backbone.jl")
 
@@ -28,23 +28,22 @@ end
 for bs in sizes
     yolo = YOLO.Yolo(cfgfile, nothing, 1; silent = true, use_gpu = false,
         weights_stop_layer = 0, trainable_batchnorm = true)
-    m = todevice(classifier(yolo; nclasses = 10, nconv = 9))
+    m = todevice(classifier(yolo; nclasses = 10))
     x = todevice(randn(Float32, res, res, 3, bs))
     y = todevice(Flux.onehotbatch(rand(1:10, bs), 1:10))
-    st = Optimisers.setup(Optimisers.AdamW(1.0f-3), m)
-    # Written out rather than wrapped in a closure: closing over `m` and `st`,
-    # which are reassigned every step, boxes them and makes the whole forward
-    # pass dynamically dispatched, which shows up as a slower step.
+    st = Flux.setup(Flux.AdamW(1.0f-3), m)
+    # Metal grows its buffer pool over the first few steps, so warm up generously
+    # or the first configuration measured pays for it.
     for _ in 1:4
         _, g = Flux.withgradient(mm -> Flux.logitcrossentropy(mm(x), y), m)
-        st, m = Optimisers.update!(st, m, g[1])
+        Flux.update!(st, m, g[1])
     end
     sync()
     n = 8
     t = time()
     for _ in 1:n
         _, g = Flux.withgradient(mm -> Flux.logitcrossentropy(mm(x), y), m)
-        st, m = Optimisers.update!(st, m, g[1])
+        Flux.update!(st, m, g[1])
     end
     sync()
     dt = (time() - t) / n

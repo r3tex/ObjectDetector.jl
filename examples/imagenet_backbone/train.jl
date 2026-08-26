@@ -24,7 +24,7 @@ const BACKEND = let
 end
 
 using Printf, Statistics, Random
-using Flux, Optimisers, JLD2
+using Flux, JLD2
 using ObjectDetector, ObjectDetector.YOLO
 
 if Sys.isapple()
@@ -58,7 +58,7 @@ const DEFAULTS = Dict{Symbol, Any}(
     :batchsize => 64,
     :lr => 3.0f-4,
     :res => 224,
-    :nconv => 9,
+    :stop_layer => 15,
     :full => false,
 )
 
@@ -119,13 +119,16 @@ function main(opts)
     # detection heads stay random and are trained later by `train!` on boxes.
     yolo = YOLO.Yolo(opts.cfg, nothing, 1; silent = true, use_gpu = false,
         weights_stop_layer = 0, trainable_batchnorm = true)
-    model = todevice(classifier(yolo; nclasses = ncls, nconv = opts.nconv))
-    state = Optimisers.setup(Optimisers.AdamW(opts.lr), model)
+    model = todevice(classifier(yolo; nclasses = ncls, stop_layer = opts.stop_layer))
+    # `Flux.update!` updates in place, which is what the package's own `train!`
+    # does. On CPU the trunk's arrays are shared with `yolo`, so this trains the
+    # detector's trunk directly.
+    state = Flux.setup(Flux.AdamW(opts.lr), model)
 
     @printf("backend %s, %d threads | %d classes, %d train / %d val images\n",
         opts.backend, Threads.nthreads(), ncls, length(trainset), length(valset))
-    @printf("%s: first %d conv blocks, %d parameters at %d x %d\n",
-        basename(opts.cfg), opts.nconv, sum(length, Flux.trainables(model)), opts.res, opts.res)
+    @printf("%s: cfg blocks 1-%d, %d parameters at %d x %d\n",
+        basename(opts.cfg), opts.stop_layer, sum(length, Flux.trainables(model)), opts.res, opts.res)
 
     mkpath(opts.out)
     nb = nbatches(trainset, opts.batchsize)
@@ -137,7 +140,7 @@ function main(opts)
         for (i, (X, Y)) in enumerate(batches(trainset, ncls; batchsize = opts.batchsize))
             x, y = todevice(X), todevice(Y)
             loss, grads = Flux.withgradient(m -> Flux.logitcrossentropy(m(x), y), model)
-            state, model = Optimisers.update!(state, model, grads[1])
+            Flux.update!(state, model, grads[1])
             running += loss * size(X, 4)
             seen += size(X, 4)
             if i % 10 == 0 || i == nb
@@ -166,7 +169,7 @@ function main(opts)
     ncopied = copy_backbone!(yolo, Flux.cpu(model)[:backbone])
     weightfile = joinpath(opts.out, "yolov3-tiny-imagenet.weights")
     save_weights(yolo, weightfile)
-    @printf("copied %d conv blocks into the detector; wrote %s\n", ncopied, weightfile)
+    @printf("%d conv blocks in the detector's trunk; wrote %s\n", ncopied, weightfile)
     return model
 end
 
