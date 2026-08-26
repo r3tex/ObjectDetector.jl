@@ -50,8 +50,9 @@ get_input_size
 ## Training
 
 `train!`, `save_weights`, `ObjectDetector.backbone`,
-`ObjectDetector.copy_backbone!`, `TrainSample`, `load_darknet_dataset` and
-`load_darknet_labels` are documented on the [Training](@ref training) page.
+`ObjectDetector.copy_backbone!`, `ObjectDetector.evaluate`, `TrainSample`,
+`load_darknet_dataset` and `load_darknet_labels` are documented on the
+[Training](@ref training) page.
 
 ## Benchmarking
 

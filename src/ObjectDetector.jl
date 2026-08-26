@@ -41,13 +41,14 @@ function get_input_size end
 include("prepareimage.jl")
 include("allocators.jl")
 include("training_data.jl")
+include("eval.jl")
 
 function uses_gpu end
 function get_cfg end
 function train! end
 function save_weights end
-# Not exported: Metalhead.jl exports `backbone` for the same concept, and a
-# clash would make every unqualified call an error in a plausible pairing.
+# Not exported: `backbone` clashes with Metalhead.jl, which exports it for the
+# same concept, and `evaluate` is too generic a name to claim.
 function backbone end
 function copy_backbone! end
 

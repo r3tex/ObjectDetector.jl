@@ -106,6 +106,30 @@ backbone
 copy_backbone!
 ```
 
+## Evaluation
+
+`ObjectDetector.evaluate` scores a model against the same `TrainSample` vector
+`train!` takes, and reports COCO-style mean average precision. Ground truth is
+letterboxed by the same code that prepares training batches, so detections and
+targets are compared in one coordinate system.
+
+```julia
+data = load_darknet_dataset("dataset/val/images", "dataset/val/labels")
+metrics = ObjectDetector.evaluate(yolomod, data; image_loader = FileIO.load)
+metrics.mAP50
+```
+
+The default `detect_thresh` is 0.001, far below what you would use for inference.
+Average precision integrates the whole precision-recall curve, so discarding
+low-confidence detections truncates the curve and understates the model.
+
+The numbers agree with `pycocotools` to within 0.003 AP on COCO val2017.
+
+```@docs
+evaluate
+DetectionMetrics
+```
+
 ## Saving
 
 ```@docs
