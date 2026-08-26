@@ -98,7 +98,8 @@ save_weights(yolo, "pretrained.weights")
 ```
 
 [Pre-training a backbone on ImageNet](@ref imagenet-backbone) works through this
-end to end.
+end to end, and [Detection training on COCO](@ref coco-detection) picks it up from
+there.
 
 ```@docs
 backbone

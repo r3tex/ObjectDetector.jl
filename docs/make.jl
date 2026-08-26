@@ -18,6 +18,7 @@ makedocs(;
         "Training" => "training.md",
         "Tutorials" => [
             "Pre-training a backbone on ImageNet" => "tutorials/imagenet_backbone.md",
+            "Detection training on COCO" => "tutorials/coco_detection.md",
         ],
         "Acceleration" => "acceleration.md",
         "API reference" => "api.md",

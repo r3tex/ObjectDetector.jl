@@ -288,4 +288,6 @@ expresses in the [fine-tuning recipe](@ref training).
 ## Speed
 
 See [Acceleration](@ref acceleration) for the backend comparison and the
-Metal-specific pitfalls behind these numbers.
+Metal-specific pitfalls behind these numbers, and
+[Detection training on COCO](@ref coco-detection) for what to do with the weights
+this produces.

@@ -71,5 +71,7 @@ save("result.png", imgBoxes)
 - [Pre-training a backbone on ImageNet](@ref imagenet-backbone): the classification
   step of the Darknet recipe, using
   [ImageNetDataset.jl](https://github.com/Julia-XAI/ImageNetDataset.jl).
+- [Detection training on COCO](@ref coco-detection): reading COCO's own
+  annotations, and adapting a pretrained detector to a subset of classes.
 - [Acceleration](@ref acceleration): CPU BLAS, CUDA, and measured notes on Apple
   silicon.
