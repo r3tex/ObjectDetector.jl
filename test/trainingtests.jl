@@ -1,4 +1,4 @@
-using ObjectDetector: YOLO, TrainSample, train!, save_weights
+using ObjectDetector: YOLO, TrainSample, train!, save_weights, backbone, copy_backbone!
 import Flux
 using Random: MersenneTwister
 
@@ -181,6 +181,40 @@ using Random: MersenneTwister
         g1 = gs[1].layers[1].layers[1].layers[1].weight
         @test g1 !== nothing
         @test any(!=(0), g1)
+    end
+
+    @testset "backbone" begin
+        # blocks 1:15 is darknet's yolov3-tiny.conv.15 split, 9 convolutions;
+        # blocks 1:13 stops at the 1024-channel trunk both branches share
+        trunk = backbone(model, 15)
+        @test count(l -> l isa Flux.Conv, trunk) == 9
+        @test count(l -> l isa Flux.Conv, backbone(model, 13)) == 7
+        x = rand(MersenneTwister(1), Float32, 160, 160, 3, 1)
+        @test size(trunk(x)) == (5, 5, 512, 1)          # 160 / 32
+        @test size(backbone(model, 13)(x)) == (5, 5, 1024, 1)
+
+        # the trunk shares its arrays with the model, so an in-place update
+        # trains the detector too
+        before = copy(YOLO.conv_layers(model.chain)[1].weight)
+        st = Flux.setup(Flux.Adam(1.0f-2), trunk)
+        _, gs = Flux.withgradient(t -> sum(abs2, t(x)), trunk)
+        @test any(!=(0), gs[1].layers[1].weight)
+        Flux.update!(st, trunk, gs[1])
+        @test YOLO.conv_layers(model.chain)[1].weight != before
+
+        # a trunk trained elsewhere (as on a GPU) copies back by value
+        detached = deepcopy(trunk)
+        detached.layers[1].weight .+= 1.0f0
+        @test copy_backbone!(model, detached) == 9
+        @test YOLO.conv_layers(model.chain)[1].weight == detached.layers[1].weight
+
+        @test_throws ArgumentError backbone(model, 0)
+        @test_throws ArgumentError backbone(model, 999)
+        # CSP-style backbones route within the trunk and cannot be split off
+        csp = YOLO.Yolo(joinpath(YOLO.models_dir(), "yolov4-tiny.cfg"), nothing, 1;
+                        silent=true, use_gpu=false, disallow_bumper=true, weights_stop_layer=0,
+                        cfgchanges=[(:net, 1, :width, 160), (:net, 1, :height, 160)])
+        @test_throws ArgumentError backbone(csp, 30)
     end
 
     @testset "pretrained transfer with custom classes" begin

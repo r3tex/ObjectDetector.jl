@@ -2,7 +2,7 @@
 ##### TRAINING #########################################
 ########################################################
 
-import ..train!, ..save_weights, ..TrainSample, ..make_training_batch
+import ..train!, ..save_weights, ..backbone, ..copy_backbone!, ..TrainSample, ..make_training_batch
 import Random
 
 # Pure (non-mutating) forward pass, differentiable with Zygote. The regular
@@ -35,6 +35,113 @@ function raw_head_outputs(chain::Flux.Chain, x, headidxs)
         outs = (outs..., x)
     end
     return map(i -> outs[i], headidxs)
+end
+
+"""
+    PureActivation(layer)
+
+Non-mutating stand-in for a `BroadcastActivation`, which applies its
+activation with `broadcast!` into its own input. That is what the inference path
+wants and what Zygote cannot differentiate through, so [`backbone`](@ref)
+substitutes this. Holds no parameters.
+"""
+struct PureActivation{L}
+    layer::L
+end
+(p::PureActivation)(x) = _pure(p.layer, (), x)
+Base.show(io::IO, p::PureActivation) = print(io, "PureActivation(", p.layer.act, ")")
+
+# Layers a plain feed-forward trunk can contain: everything whose `_pure` method
+# ignores `outs`. Route, shortcut and concatenation layers read other layers'
+# outputs and so cannot appear in a chain that is run in isolation.
+const TrunkLayer = Union{Flux.Conv, Flux.BatchNorm, MaxPoolLayer, BroadcastActivation, Reorg, Upsample}
+
+"""
+    backbone(model, stop_layer) -> Flux.Chain
+
+The model's convolutional trunk, as a chain that can be trained.
+
+`stop_layer` counts cfg blocks, the same unit `Yolo`'s `weights_stop_layer` uses,
+so the two are inverses: `backbone(model, 15)` returns the part of a yolov3-tiny
+that `weights_stop_layer = 15` restores from darknet's `yolov3-tiny.conv.15`.
+
+The chain holds the *same* `Conv` and `BatchNorm` objects as `model`, so training
+it with `Flux.update!`, which updates in place, trains `model` too. Only the
+activations are substituted, for a non-mutating `PureActivation`. Training on a GPU
+breaks the sharing, because `gpu` copies the arrays to the device; use
+[`copy_backbone!`](@ref) to bring them back.
+
+Batch-norm parameters are trainable only if the model was built with
+`trainable_batchnorm = true`; otherwise they were folded into the convolution
+weights at load time and only the kernels remain.
+
+Throws if blocks `1:stop_layer` contain a route, shortcut or concatenation
+layer, since those read outputs the trunk does not have on its own. That covers
+the tiny models; the CSP and darknet-53 style backbones are not splittable this
+way.
+
+# Example
+
+```julia
+yolo = YOLO.Yolo(cfg, nothing, 1; weights_stop_layer=0, trainable_batchnorm=true)
+trunk = backbone(yolo, 15)
+model = Flux.Chain(trunk, Flux.GlobalMeanPool(), Flux.flatten, Flux.Dense(512 => 1000))
+```
+"""
+function backbone(yolo::Yolo, stop_layer::Integer)
+    blocks = get(yolo.cfg, :layerblocks, nothing)
+    blocks === nothing && error("Model does not carry its cfg layer blocks; construct the model with this version of ObjectDetector to enable splitting")
+    1 <= stop_layer <= length(blocks) ||
+        throw(ArgumentError("stop_layer=$stop_layer is outside the model's $(length(blocks)) cfg blocks"))
+    nconv = count(b -> first(b) === :convolutional, view(blocks, 1:Int(stop_layer)))
+    nconv > 0 || throw(ArgumentError("cfg blocks 1:$stop_layer contain no convolutional layers"))
+
+    flat = Any[]
+    _flatten_layers!(flat, yolo.chain)
+    layers = Any[]
+    seen = 0
+    for l in flat
+        l isa Flux.Conv && (seen += 1)
+        seen > nconv && break
+        if !(l isa TrunkLayer)
+            # A skip layer once the trunk is complete is just the boundary;
+            # one before that means this backbone cannot stand alone.
+            seen == nconv && break
+            throw(ArgumentError("cfg blocks 1:$stop_layer contain a $(nameof(typeof(l))), which reads another layer's output; this model's backbone cannot be split off as a plain chain"))
+        end
+        push!(layers, l isa BroadcastActivation ? PureActivation(l) : l)
+    end
+    return Flux.Chain(layers...)
+end
+
+"""
+    copy_backbone!(model, trunk) -> Int
+
+Copy the trunk's convolution and batch-norm parameters into `model`, in place,
+and return the number of convolutions copied. `trunk` is a chain from
+[`backbone`](@ref), matched against the head of `model`'s own layers.
+
+Only needed when the trunk was trained on a GPU, where `gpu` copied the arrays to
+the device. On CPU the arrays are shared and `Flux.update!` has already written
+through, which makes this a self-copy.
+"""
+function copy_backbone!(yolo::Yolo, trunk)
+    ncopied = 0
+    for ((conv, bn), (tconv, tbn)) in zip(conv_bn_layers(yolo.chain), conv_bn_layers(trunk))
+        size(conv.weight) == size(tconv.weight) ||
+            throw(DimensionMismatch("convolution $(ncopied + 1) is $(size(conv.weight)) in the model but $(size(tconv.weight)) in the trunk"))
+        copyto!(conv.weight, tconv.weight)
+        conv.bias isa AbstractArray && copyto!(conv.bias, tconv.bias)
+        if bn !== nothing
+            tbn === nothing && throw(ArgumentError("convolution $(ncopied + 1) has batchnorm in the model but not in the trunk"))
+            copyto!(bn.β, tbn.β)
+            copyto!(bn.γ, tbn.γ)
+            copyto!(bn.μ, tbn.μ)
+            copyto!(bn.σ², tbn.σ²)
+        end
+        ncopied += 1
+    end
+    return ncopied
 end
 
 # Static per-head metadata needed by the loss, precomputed once per training run

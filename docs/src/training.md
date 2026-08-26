@@ -78,6 +78,33 @@ train!(yolomod, data;
 Starting from a trunk pre-trained on classification rather than from noise is the
 usual recipe; see [Pre-training a backbone on ImageNet](@ref imagenet-backbone).
 
+## Splitting off the backbone
+
+`backbone` returns a model's convolutional trunk as a chain that can be trained
+on its own, which is how a backbone gets pre-trained on classification before the
+detector is trained on boxes. It counts cfg blocks, the same unit
+`weights_stop_layer` uses, so the two are inverses:
+
+```julia
+yolo = YOLO.Yolo(cfg, nothing, 1; weights_stop_layer = 0, trainable_batchnorm = true)
+trunk = backbone(yolo, 15)   # darknet's yolov3-tiny.conv.15 split
+```
+
+The chain holds the same `Conv` and `BatchNorm` objects as the model, so training
+it with `Flux.update!` trains the model too. Training on a GPU breaks that
+sharing, because `gpu` copies the arrays to the device, so the result has to be
+brought back before saving:
+
+```julia
+copy_backbone!(yolo, cpu(trunk))
+save_weights(yolo, "pretrained.weights")
+```
+
+```@docs
+backbone
+copy_backbone!
+```
+
 ## Saving
 
 ```@docs

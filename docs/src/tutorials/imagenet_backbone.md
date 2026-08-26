@@ -132,90 +132,63 @@ Run Julia with `-t auto` or the decode is serial.
 
 ## Getting the trunk out of the model
 
-The layers come from the package rather than being rebuilt: `YOLO.Yolo` already
-parses the cfg, constructs the convolutions and batch-norms and initialises them.
-Starting from a randomly initialised detector with live batch-norm:
+[`backbone`](@ref) does this. Starting from a randomly initialised detector with
+live batch-norm:
 
 ```julia
 yolo = YOLO.Yolo(cfg, nothing, 1; silent = true, use_gpu = false,
                  weights_stop_layer = 0,     # random-init everything
                  trainable_batchnorm = true) # live batch-norm to train
-```
 
-Its `chain` is a `Chain` of sub-chains, grouped so the skip layers can find their
-buffers. Flattening it gives a plain layer list, and the trunk is the prefix up to
-the last convolution of block `stop_layer`:
-
-```julia
-function backbone_layers(yolo; stop_layer::Int = 15)
-    model = yolo_model(yolo)
-    blocks = model.cfg[:layerblocks]
-    nconv = count(b -> first(b) === :convolutional, blocks[1:stop_layer])
-
-    flat = Any[]
-    YOLO._flatten_layers!(flat, model.chain)
-    layers = Any[]
-    seen = 0
-    for l in flat
-        l isa Flux.Conv && (seen += 1)
-        seen > nconv && break
-        push!(layers, l)
-    end
-    return layers
-end
+trunk = backbone(yolo, 15)
 ```
 
 `stop_layer` counts cfg blocks, the same unit `weights_stop_layer` uses, so the
-two halves of the round trip speak the same language. For `yolov3-tiny.cfg` that
-is 33 flattened layers at `stop_layer = 15`, or 27 at `stop_layer = 13`.
+two halves of the round trip are expressed the same way: 15 is darknet's
+`yolov3-tiny.conv.15` split, nine convolutions, and 13 stops at the
+1024-channel trunk both detection branches share.
 
-One layer has to be swapped. The inference path uses `YOLO.BroadcastActivation`,
-which writes its result back into its own input:
+Two things are worth knowing about what comes back.
+
+The chain holds the *same* `Conv` and `BatchNorm` objects the detector holds, not
+copies. `Flux.update!` updates in place, which is what the package's own
+[`train!`](@ref training) relies on, so training the trunk on CPU trains `yolo`
+directly. On a GPU it does not, because `gpu` copies the arrays to the device.
+
+The activations are substituted. The inference path applies them with
+`broadcast!` into their own input:
 
 ```julia
 (l::BroadcastActivation)(x) = broadcast!(l.act, x, x)
 ```
 
-That is exactly what you want for inference throughput and exactly what Zygote
-cannot differentiate through. The package already solves this for its own
-training path in `YOLO._pure`, so the example defers to it rather than restating
-the rule:
+which is what you want for inference throughput and exactly what Zygote cannot
+differentiate through, so `backbone` swaps in a non-mutating `PureActivation`
+that defers to the same `_pure` rule the detector's training path uses.
+
+This only works for a trunk that is a plain feed-forward stack. CSP-style
+backbones route within the trunk, and `backbone` says so rather than returning
+something broken:
 
 ```julia
-struct PureActivation{L}
-    layer::L
-end
-(p::PureActivation)(x) = YOLO._pure(p.layer, (), x)
-
-pure(l::YOLO.BroadcastActivation) = PureActivation(l)
-pure(l) = l
+julia> backbone(v4_tiny, 30)
+ERROR: ArgumentError: cfg blocks 1:30 contain a RouteLayer, which reads another
+layer's output; this model's backbone cannot be split off as a plain chain
 ```
 
-`outs` is empty because the trunk holds no skip layers, and only the activation
-is ever wrapped: `PureActivation` is not a Functors node, so a `Conv` hidden
-inside one would be invisible to `Flux.setup`.
-
-Adding a global-average-pool head gives the classifier Darknet pre-trains with:
+Adding a global-average-pool head gives the classifier darknet pre-trains with:
 
 ```julia
 function classifier(yolo; nclasses::Int, stop_layer::Int = 15)
-    layers = map(pure, backbone_layers(yolo; stop_layer))
-    channels = size(last(filter(l -> l isa Flux.Conv, layers)).weight, 4)
-    backbone = Chain(layers...)
+    trunk = backbone(yolo, stop_layer)
+    channels = size(last(filter(l -> l isa Flux.Conv, collect(trunk))).weight, 4)
     head = Chain(GlobalMeanPool(), Flux.flatten, Dense(channels => nclasses))
-    return Chain(; backbone, classifier = head)
+    return Chain(; backbone = trunk, classifier = head)
 end
 ```
 
 At 224x224 the five stride-2 max-pools take the feature map to 7x7, and
 `stop_layer = 15` leaves 512 channels there: 7.74M parameters including the head.
-
-!!! note "The trunk is shared"
-    The `Conv` and `BatchNorm` objects in the classifier are the same objects the
-    detector holds, and `Flux.update!` writes through them in place, which is what
-    the package's own `train!` relies on. On CPU, training the classifier
-    therefore trains `yolo` directly. On a GPU it does not: `Flux.gpu` copies the
-    arrays to the device, so the trained values have to be brought back.
 
 ## Training
 
@@ -283,9 +256,9 @@ ncopied = copy_backbone!(yolo, Flux.cpu(model)[:backbone])
 save_weights(yolo, joinpath(opts.out, "yolov3-tiny-imagenet.weights"))
 ```
 
-`copy_backbone!` pairs the model's convolutions with the trained ones through the
-package's `conv_bn_layers` and `copyto!`s kernels and batch-norm parameters across.
-On CPU it is a self-copy, since `Flux.update!` has already written through. Because the
+[`copy_backbone!`](@ref) pairs the model's convolutions with the trained ones and
+`copyto!`s kernels and batch-norm parameters across. On CPU it is a self-copy,
+since `Flux.update!` has already written through. Because the
 model was built with `trainable_batchnorm = true`, `save_weights` writes true
 Darknet batch-norm parameters rather than folded identity ones.
 

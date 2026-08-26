@@ -49,8 +49,9 @@ get_input_size
 
 ## Training
 
-`train!`, `save_weights`, `TrainSample`, `load_darknet_dataset` and
-`load_darknet_labels` are documented on the [Training](@ref training) page.
+`train!`, `save_weights`, `backbone`, `copy_backbone!`, `TrainSample`,
+`load_darknet_dataset` and `load_darknet_labels` are documented on the
+[Training](@ref training) page.
 
 ## Benchmarking
 

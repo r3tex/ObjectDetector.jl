@@ -1,7 +1,7 @@
 module ObjectDetector
 export YOLO
 export prepare_image, prepare_image!, resizekern, sizethatfits, emptybatch, draw_boxes
-export train!, save_weights, TrainSample, load_darknet_dataset, load_darknet_labels
+export train!, save_weights, backbone, copy_backbone!, TrainSample, load_darknet_dataset, load_darknet_labels
 
 import Flux.gpu
 
@@ -46,6 +46,8 @@ function uses_gpu end
 function get_cfg end
 function train! end
 function save_weights end
+function backbone end
+function copy_backbone! end
 
 ## YOLO models
 include(joinpath(@__DIR__,"yolo","yolo.jl"))
