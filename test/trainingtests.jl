@@ -183,6 +183,21 @@ using Random: MersenneTwister
         @test any(!=(0), g1)
     end
 
+    @testset "warmup learning rate types" begin
+        # `adjust!` rebuilds the optimiser rule and demands the new learning rate
+        # be exactly the type the old one was, so warmup has to match whatever the
+        # rule holds. The default lr is a Float32 and used to throw here.
+        for lr in (1f-3, 1e-3)
+            res = train!(model, data; epochs=1, batchsize=2, lr, warmup_batches=2,
+                         silent=true, rng=MersenneTwister(0))
+            @test isfinite(only(res.losses))
+        end
+        # a user-supplied rule keeps its own eta type, and its own learning rate
+        res = train!(model, data; epochs=1, batchsize=2, opt=Flux.Adam(1e-4),
+                     warmup_batches=2, silent=true, rng=MersenneTwister(0))
+        @test isfinite(only(res.losses))
+    end
+
     @testset "backbone" begin
         # blocks 1:15 is darknet's yolov3-tiny.conv.15 split, 9 convolutions;
         # blocks 1:13 stops at the 1024-channel trunk both branches share

@@ -414,7 +414,12 @@ function train!(yolo::Yolo, data::AbstractVector{<:TrainSample};
     isempty(data) && throw(ArgumentError("No training samples provided"))
     heads = train_heads(yolo)
     chain = yolo.chain
-    opt_state = Flux.setup(something(opt, Flux.Adam(lr)), chain)
+    rule = something(opt, Flux.Adam(Float32(lr)))
+    opt_state = Flux.setup(rule, chain)
+    # `adjust!` rebuilds the rule and needs the new learning rate to be exactly
+    # the type the old one was, so warmup scales the rule's own eta rather than
+    # `lr`, which is ignored anyway when `opt` was supplied.
+    base_eta = hasproperty(rule, :eta) ? rule.eta : Float32(lr)
     maybe_gpu(z) = uses_gpu(yolo) ? gpu(z) : z
     box_weight, obj_weight, cls_weight, noobj_weight = Float32.((box_weight, obj_weight, cls_weight, noobj_weight))
     epoch_losses = Float32[]
@@ -436,7 +441,7 @@ function train!(yolo::Yolo, data::AbstractVector{<:TrainSample};
             end
             if warmup_batches > 0 && nseen <= warmup_batches
                 nseen += 1
-                Flux.adjust!(opt_state, Float32(lr) * min(nseen / warmup_batches, 1f0))
+                Flux.adjust!(opt_state, oftype(base_eta, base_eta * min(nseen / warmup_batches, 1)))
             end
             tgts_cpu = build_targets(heads, boxes_batch)
             tgts = [(tobj=maybe_gpu(t.tobj), tx=maybe_gpu(t.tx), ty=maybe_gpu(t.ty),
