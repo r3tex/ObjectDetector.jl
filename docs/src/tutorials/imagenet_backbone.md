@@ -1,5 +1,9 @@
 # [Pre-training a backbone on ImageNet](@id imagenet-backbone)
 
+```@meta
+CurrentModule = ObjectDetector
+```
+
 This tutorial trains a YOLO model's convolutional trunk as an image classifier
 using [ImageNetDataset.jl](https://github.com/Julia-XAI/ImageNetDataset.jl), then
 writes it back out as Darknet weights that [`train!`](@ref training) can fine-tune
@@ -14,11 +18,12 @@ ImageNet (ILSVRC-2012, the dataset ImageNetDataset.jl loads) is a *classificatio
 dataset: one label per image, no bounding boxes. The YOLO loss needs boxes, so
 **a detector cannot be trained on ImageNet end to end**.
 
-What ImageNet is for in the YOLO recipe is the trunk. Darknet distributes the
-result as `yolov3-tiny.conv.15`: the first 15 layers, used as the initialisation
-for detection training on a dataset that does have boxes. That is the file this
-tutorial produces, and it is the same split the package's own fine-tuning recipe
-restores with `weights_stop_layer = 15`.
+What ImageNet is for in the YOLO recipe is the backbone, the convolutional trunk.
+Darknet distributes the result as `yolov3-tiny.conv.15`: the first 15 layers, used
+to initialize detection training on a dataset that does have boxes. This tutorial
+produces the equivalent, a full weights file whose backbone is ImageNet-trained
+and whose heads are still random, split at the same point the package's own
+fine-tuning recipe restores with `weights_stop_layer = 15`.
 
 Reading `yolov3-tiny.cfg`, the split is:
 
@@ -57,9 +62,9 @@ valset   = ImageNet(:val;   dir = "/path/to/ILSVRC")
 ### Working on a subset
 
 The full training split is 1.28M images, about 140 GB. To get the pipeline running
-first, [Imagenette](https://github.com/fastai/imagenette) is a 10-class subset of
-*real* ImageNet images, distributed without registration and already in the
-`<split>/<wnid>/*.JPEG` layout ImageNetDataset expects:
+before committing to that, use [Imagenette](https://github.com/fastai/imagenette):
+a 10-class subset of *real* ImageNet images, distributed without registration, and
+already in the `<split>/<wnid>/*.JPEG` layout ImageNetDataset expects.
 
 ```
 curl -LO https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-320.tgz
@@ -76,8 +81,8 @@ devkit metadata and asserts the exact ILSVRC file counts:
 @assert length(paths) == TRAINSET_SIZE   # 1_281_167
 ```
 
-So build the struct directly. Everything downstream, the transforms, indexing,
-`convert2image`, `class`, is unchanged:
+So build the struct directly. Everything downstream (the transforms, indexing,
+`convert2image`, `class`) is unchanged:
 
 ```julia
 function imagenet_subset(root, split; transform = CenterCropNormalize(), classnames = IMAGENETTE_CLASSES)
@@ -103,7 +108,7 @@ set too, so the two paths stay consistent.
 ### Preprocessing
 
 ImageNetDataset supplies the transforms: random crops for training, center crops
-for validation, both normalised with the usual ImageNet channel statistics.
+for validation, both normalized with the usual ImageNet channel statistics.
 
 ```julia
 RandomCropNormalize(; output_size = (224, 224), open_size = (256, 256))
@@ -132,7 +137,7 @@ Run Julia with `-t auto` or the decode is serial.
 
 ## Getting the trunk out of the model
 
-[`backbone`](@ref) does this. Starting from a randomly initialised detector with
+[`backbone`](@ref) does this. Starting from a randomly initialized detector with
 live batch-norm:
 
 ```julia
@@ -162,9 +167,9 @@ The activations are substituted. The inference path applies them with
 (l::BroadcastActivation)(x) = broadcast!(l.act, x, x)
 ```
 
-which is what you want for inference throughput and exactly what Zygote cannot
-differentiate through, so `backbone` swaps in a non-mutating `PureActivation`
-that defers to the same `_pure` rule the detector's training path uses.
+fast for inference, but Zygote cannot differentiate it, so `backbone` swaps in a
+non-mutating `PureActivation` that defers to the same `_pure` rule the detector's
+own training path uses.
 
 This only works for a trunk that is a plain feed-forward stack. CSP-style
 backbones route within the trunk, and `backbone` says so rather than returning
@@ -217,7 +222,7 @@ and `--stop_layer 13` to stop at the shared 1024-channel trunk.
 
 ## Results
 
-Five epochs on Imagenette from random initialisation, on an Apple M5 Pro via
+Five epochs on Imagenette from random initialization, on an Apple M5 Pro via
 Metal:
 
 ```
@@ -242,7 +247,7 @@ overfitting on a subset looks like: the number moves several points run to run
 and the last epoch is not reliably the best one.
 
 So this is a working pipeline, not a pre-trained backbone. A real run is the full
-1.28M images for on the order of a hundred epochs; the point of the subset is to
+1.28M images for around a hundred epochs; the point of the subset is to
 exercise every part of the pipeline before committing to that.
 
 ## Handing the trunk back to the detector
@@ -256,9 +261,8 @@ ncopied = copy_backbone!(yolo, Flux.cpu(model)[:backbone])
 save_weights(yolo, joinpath(opts.out, "yolov3-tiny-imagenet.weights"))
 ```
 
-[`copy_backbone!`](@ref) pairs the model's convolutions with the trained ones and
-`copyto!`s kernels and batch-norm parameters across. On CPU it is a self-copy,
-since `Flux.update!` has already written through. Because the
+On CPU this is a self-copy, since the update has already written through to the
+shared arrays. Because the
 model was built with `trainable_batchnorm = true`, `save_weights` writes true
 Darknet batch-norm parameters rather than folded identity ones.
 

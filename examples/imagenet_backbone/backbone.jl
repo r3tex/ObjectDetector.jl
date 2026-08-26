@@ -5,6 +5,7 @@
 
 using Flux
 using ObjectDetector
+using ObjectDetector: backbone
 
 """
     classifier(yolo; nclasses, stop_layer = 15)

@@ -13,8 +13,8 @@ anything else:
 
 - **Apple silicon**: load
   [AppleAccelerate.jl](https://github.com/JuliaLinearAlgebra/AppleAccelerate.jl)
-  before running. Apple's AMX-backed sgemm beats the default OpenBLAS
-  substantially (~35% end-to-end for `v3_416_COCO` on an M2 Pro):
+  before running. Apple's AMX-backed sgemm beats the default OpenBLAS by
+  ~35% end-to-end for `v3_416_COCO` on an M2 Pro:
 
   ```julia
   using AppleAccelerate, ObjectDetector
@@ -46,7 +46,7 @@ and the gradient runs there. That is what the pre-training example does.
 
 One training step, forward plus backward plus an `AdamW` update, of the
 YOLOv3-tiny trunk classifier (9 conv blocks, 7.74M parameters) at 224x224. Apple
-M5 Pro (16 GPU cores, 5 performance and 10 efficiency cores, 24 GB), Julia 1.12.6
+M5 Pro (16 GPU cores, 15 CPU cores, 24 GB), Julia 1.12.6
 with `-t auto`, Flux 0.16.11, Metal.jl 1.10.3. One process per row.
 
 | Backend | Batch | s/step | img/s |
@@ -68,8 +68,8 @@ short.
 
 ### Warm up before timing anything on Metal
 
-This is the trap, and it is easy to draw exactly the wrong conclusion from it.
-Metal.jl grows its buffer pool over the first several steps. Timed with two
+Metal.jl grows its buffer pool over the first several steps, so a short warm-up
+measures that rather than the model. Timed with two
 warm-up steps in a process shared with earlier configurations, a batch-32 run
 measured **14.5 img/s** and looked far slower than the CPU. The same configuration
 in a fresh process with four warm-up steps measured **88.4 img/s**.
@@ -88,10 +88,10 @@ memory does not come close, and how far off depends on the rank of the array:
 | ... 2-D | 95 GB/s |
 | ... 4-D (W, H, C, N) | 31 GB/s |
 
-Element-wise work on activations is therefore much less favourable on Metal than
-the convolutions are, which are 4-8x the CPU. Where an operation does not care
-about shape, reshaping a WHCN array to a vector before broadcasting is worth
-several times the bandwidth.
+Element-wise work on activations therefore gains far less from Metal than the
+convolutions do. Where an operation does not care about shape, reshaping a WHCN
+array to a vector before broadcasting recovers most of the gap: 140 GB/s against
+31 above.
 
 What does *not* follow from this is that fusing activation layers into the
 batch-norm helps. That was measured too: folding the `[convolutional]` block's

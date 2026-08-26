@@ -2,7 +2,7 @@
 # ObjectDetector as darknet weights.
 #
 # ImageNet has no bounding boxes, so this trains the convolutional trunk only,
-# which is the role darknet's `yolov3-tiny.conv.15` plays: an initialisation for
+# which is the role darknet's `yolov3-tiny.conv.15` plays: an initialization for
 # detection training, which then happens with `train!` on a dataset that does
 # have boxes.
 #
@@ -18,14 +18,15 @@
 const BACKEND = let
     i = findfirst(==("--backend"), ARGS)
     requested = i === nothing ? "auto" : ARGS[i + 1]
-    # Metal is roughly 2.5x the CPU on this model; `bench.jl` prints the
-    # comparison. Pass `--backend cpu` to force Apple's Accelerate BLAS instead.
+    # Metal is 2-3x the CPU on this model; `bench.jl` prints the comparison.
+    # Pass `--backend cpu` to force Apple's Accelerate BLAS instead.
     requested == "auto" ? (Sys.isapple() && Sys.ARCH === :aarch64 ? "metal" : "cpu") : requested
 end
 
-using Printf, Statistics, Random
+using Printf, Random
 using Flux, JLD2
 using ObjectDetector, ObjectDetector.YOLO
+using ObjectDetector: copy_backbone!
 
 if Sys.isapple()
     # Puts Apple's Accelerate BLAS behind the im2col GEMM that NNlib's CPU
@@ -115,7 +116,7 @@ function main(opts)
             output_size = (opts.res, opts.res), open_size = (open_size, open_size)))
     ncls = nclasses(trainset)
 
-    # A randomly initialised detector. Its trunk is what gets trained; the
+    # A randomly initialized detector. Its trunk is what gets trained; the
     # detection heads stay random and are trained later by `train!` on boxes.
     yolo = YOLO.Yolo(opts.cfg, nothing, 1; silent = true, use_gpu = false,
         weights_stop_layer = 0, trainable_batchnorm = true)

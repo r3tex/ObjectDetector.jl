@@ -21,9 +21,9 @@ julia --project -t auto train.jl --data imagenette2-320 --epochs 5
 
 | File | |
 |:--|:--|
-| `backbone.jl` | pulls the trunk out of a `YOLO.Yolo` and wraps it in a classifier |
+| `backbone.jl` | the classification head; the trunk itself comes from `ObjectDetector.backbone` |
 | `data.jl` | ImageNetDataset loaders and threaded batch assembly |
 | `train.jl` | training loop, checkpointing, weight export |
 | `bench.jl` | per-step throughput across backends and batch sizes |
 
-Options: `--data --out --cfg --backend --epochs --batchsize --lr --res --nconv --full`.
+Options: `--data --out --cfg --backend --epochs --batchsize --lr --res --stop_layer --full`.

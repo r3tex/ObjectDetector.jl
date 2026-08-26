@@ -1,6 +1,5 @@
 [deps]
 AppleAccelerate = "13e28ba4-7ad8-5781-acae-3021b1ed3924"
-FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 ImageNetDataset = "d141d81c-f7c4-4296-8313-8866e6f9f78a"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"

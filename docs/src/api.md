@@ -17,8 +17,8 @@ resizekern
 sizethatfits
 ```
 
-`prepare_image!` writes into an existing destination array instead of allocating
-one, which is what `emptybatch` plus a batch slice is for.
+`prepare_image!` writes into an existing array; pair it with `emptybatch` and a
+slice of the batch.
 
 ## Batches
 
@@ -49,9 +49,9 @@ get_input_size
 
 ## Training
 
-`train!`, `save_weights`, `backbone`, `copy_backbone!`, `TrainSample`,
-`load_darknet_dataset` and `load_darknet_labels` are documented on the
-[Training](@ref training) page.
+`train!`, `save_weights`, `ObjectDetector.backbone`,
+`ObjectDetector.copy_backbone!`, `TrainSample`, `load_darknet_dataset` and
+`load_darknet_labels` are documented on the [Training](@ref training) page.
 
 ## Benchmarking
 

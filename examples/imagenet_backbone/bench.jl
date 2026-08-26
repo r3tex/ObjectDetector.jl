@@ -1,13 +1,14 @@
 # Throughput of one training step (forward + backward + optimiser update) for the
 # YOLO backbone classifier, across backends and batch sizes.
 #
-#   julia --project -t auto bench.jl metal 32,64,128 224
+#   julia --project -t auto bench.jl metal 64 224
 #
-# Run one configuration per process: Metal grows its buffer pool over the first
+# Run one configuration per process. Metal grows its buffer pool over the first
 # few steps, so whichever configuration is measured first in a shared process
 # pays for that and looks far slower than it is.
 using Flux, Printf
 using ObjectDetector, ObjectDetector.YOLO
+using ObjectDetector: backbone
 include("backbone.jl")
 
 backend = get(ARGS, 1, "cpu")
@@ -32,8 +33,6 @@ for bs in sizes
     x = todevice(randn(Float32, res, res, 3, bs))
     y = todevice(Flux.onehotbatch(rand(1:10, bs), 1:10))
     st = Flux.setup(Flux.AdamW(1.0f-3), m)
-    # Metal grows its buffer pool over the first few steps, so warm up generously
-    # or the first configuration measured pays for it.
     for _ in 1:4
         _, g = Flux.withgradient(mm -> Flux.logitcrossentropy(mm(x), y), m)
         Flux.update!(st, m, g[1])

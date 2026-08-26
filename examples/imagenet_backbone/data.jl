@@ -68,7 +68,7 @@ nclasses(ds::ImageNet) = length(ds.metadata["class_WNIDs"])
 """
     makebatch(ds, idxs, ncls) -> (X, Y)
 
-Assemble one batch. JPEG decode plus the crop/normalise transform dominates
+Assemble one batch. JPEG decode plus the crop/normalize transform dominates
 loading, so the observations of a batch are decoded across all threads.
 """
 function makebatch(ds::ImageNet, idxs::AbstractVector{Int}, ncls::Int)

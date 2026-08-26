@@ -1,5 +1,9 @@
 # [Training](@id training)
 
+```@meta
+CurrentModule = ObjectDetector
+```
+
 Training is supported for `[yolo]`-output models: both the classic decode (`v3`
 family, `v4`, `v4-tiny`) and the `new_coords=1` scaled decode (`v4-csp` and the
 rest of the Scaled-YOLOv4 family, the `v7` family). The `yolov2` `[region]`
@@ -17,7 +21,7 @@ frozen batch-norm statistics, which is what you want when adapting pretrained
 weights.
 
 For from-scratch training, build the model with `trainable_batchnorm = true` to
-keep live, trainable batch-norm layers. Convergence from random initialisation
+keep live, trainable batch-norm layers. Convergence from random initialization
 generally needs them.
 
 ## Datasets
@@ -58,7 +62,7 @@ result.losses
 
 The model is updated in place, so it can be used for inference straight
 afterwards. Truncated Darknet backbone files such as `yolov3-tiny.conv.15` load
-directly with `allow_partial_weights = true`, which randomly initialises the rest.
+directly with `allow_partial_weights = true`, which randomly initializes the rest.
 
 ## Training from scratch
 
@@ -75,30 +79,26 @@ train!(yolomod, data;
     image_loader = FileIO.load)
 ```
 
-Starting from a trunk pre-trained on classification rather than from noise is the
-usual recipe; see [Pre-training a backbone on ImageNet](@ref imagenet-backbone).
-
 ## Splitting off the backbone
 
-`backbone` returns a model's convolutional trunk as a chain that can be trained
-on its own, which is how a backbone gets pre-trained on classification before the
-detector is trained on boxes. It counts cfg blocks, the same unit
-`weights_stop_layer` uses, so the two are inverses:
+Pre-training a backbone on classification, then training the detector from it, is
+the usual way to start from something better than noise. `ObjectDetector.backbone`
+splits the trunk off as a trainable chain, and `ObjectDetector.copy_backbone!`
+puts a trained one back. Neither is exported, because Metalhead.jl exports
+`backbone` for the same concept.
 
 ```julia
 yolo = YOLO.Yolo(cfg, nothing, 1; weights_stop_layer = 0, trainable_batchnorm = true)
-trunk = backbone(yolo, 15)   # darknet's yolov3-tiny.conv.15 split
-```
+trunk = ObjectDetector.backbone(yolo, 15)   # darknet's yolov3-tiny.conv.15 split
 
-The chain holds the same `Conv` and `BatchNorm` objects as the model, so training
-it with `Flux.update!` trains the model too. Training on a GPU breaks that
-sharing, because `gpu` copies the arrays to the device, so the result has to be
-brought back before saving:
+# ... train `trunk` on a classification dataset ...
 
-```julia
-copy_backbone!(yolo, cpu(trunk))
+ObjectDetector.copy_backbone!(yolo, cpu(trunk))
 save_weights(yolo, "pretrained.weights")
 ```
+
+[Pre-training a backbone on ImageNet](@ref imagenet-backbone) works through this
+end to end.
 
 ```@docs
 backbone

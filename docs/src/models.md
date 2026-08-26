@@ -75,7 +75,7 @@ where the trailing `1` is the batch size. Useful keywords:
 | `silent` | suppress the layer-by-layer construction print |
 | `use_gpu` | opt out of the GPU even when one is available |
 | `cfgchanges` | edit the cfg before building, as above |
-| `weights_stop_layer` | load weights only up to this cfg block; later layers are randomly initialised |
+| `weights_stop_layer` | load weights only up to this cfg block; later layers are randomly initialized |
 | `allow_partial_weights` | accept a truncated weights file such as `yolov3-tiny.conv.15` |
 | `trainable_batchnorm` | keep live batch-norm layers instead of folding them into the convolutions |
 | `disallow_bumper` | opt out of the `AllocArrays` CPU allocator |
