@@ -2,7 +2,7 @@
 ##### TRAINING #########################################
 ########################################################
 
-import ..train!, ..save_weights, ..TrainSample, ..make_training_batch
+import ..train!, ..save_weights, ..backbone, ..copy_backbone!, ..TrainSample, ..make_training_batch
 import Random
 
 # Pure (non-mutating) forward pass, differentiable with Zygote. The regular
@@ -35,6 +35,141 @@ function raw_head_outputs(chain::Flux.Chain, x, headidxs)
         outs = (outs..., x)
     end
     return map(i -> outs[i], headidxs)
+end
+
+"""
+    PureActivation(layer)
+
+Non-mutating stand-in for a `BroadcastActivation`, which applies its activation
+with `broadcast!` into its own input: fast at inference, not differentiable by
+Zygote. Holds no parameters.
+"""
+struct PureActivation{L}
+    layer::L
+end
+(p::PureActivation)(x) = _pure(p.layer, (), x)
+Base.show(io::IO, p::PureActivation) = print(io, "PureActivation(", p.layer.act, ")")
+
+# Blocks a plain feed-forward trunk can contain. Route, shortcut and
+# concatenation blocks read other layers' outputs, and [yolo]/[region] produce
+# detections, so none of them can appear in a chain run in isolation.
+const TRUNK_BLOCKS = (:convolutional, :maxpool, :upsample, :reorg)
+
+"""
+    backbone(model, stop_layer) -> Flux.Chain
+
+The model's convolutional trunk, cfg blocks `1:stop_layer`, as a chain that can
+be trained.
+
+`stop_layer` counts cfg blocks, the same unit `Yolo`'s `weights_stop_layer` uses,
+so the same number names the same split on both sides: `backbone(model, 15)`
+returns the part of a yolov3-tiny that `weights_stop_layer = 15` restores from
+darknet's `yolov3-tiny.conv.15`.
+
+The chain holds the *same* `Conv` and `BatchNorm` objects as `model`, so training
+it with `Flux.update!`, which updates in place, trains `model` too. Only the
+activations are replaced, by a non-mutating `PureActivation`. Training on a
+GPU breaks the sharing, because `gpu` copies the arrays to the device; use
+[`copy_backbone!`](@ref) to bring them back.
+
+Batch-norm parameters are trainable only if the model was built with
+`trainable_batchnorm = true`; otherwise they were folded into the convolution
+weights at load time and only the kernels remain.
+
+Throws if blocks `1:stop_layer` contain anything but convolution, pooling,
+upsampling and reorg. yolov2-tiny and yolov3-tiny split cleanly; the CSP models
+(yolov4-tiny among them) and the darknet-53 backbones route within the trunk, so
+they cannot be split off this way.
+
+# Example
+
+```julia
+yolo = YOLO.Yolo(cfg, nothing, 1; weights_stop_layer=0, trainable_batchnorm=true)
+trunk = ObjectDetector.backbone(yolo, 15)
+clf = Flux.Chain(trunk, Flux.GlobalMeanPool(), Flux.flatten, Flux.Dense(512 => 1000))
+```
+"""
+function backbone(yolo::Yolo, stop_layer::Integer)
+    blocks = get(yolo.cfg, :layerblocks, nothing)
+    blocks === nothing && error("Model does not carry its cfg layer blocks; construct the model with this version of ObjectDetector to enable splitting")
+    1 <= stop_layer <= length(blocks) ||
+        throw(ArgumentError("stop_layer=$stop_layer is outside the model's $(length(blocks)) cfg blocks"))
+
+    flat = Any[]
+    _flatten_layers!(flat, yolo.chain)
+    layers = Any[]
+    i = firstindex(flat)
+    for n in 1:Int(stop_layer)
+        blocktype = first(blocks[n])
+        blocktype in TRUNK_BLOCKS ||
+            throw(ArgumentError("cfg block $n is a [$blocktype], which a backbone cannot contain; blocks 1:$stop_layer must be $(join(TRUNK_BLOCKS, ", ", " or "))"))
+        i = _take_block!(layers, flat, i, blocktype, n)
+    end
+    return Flux.Chain(layers...)
+end
+
+# Consume the layers one cfg block generated. A [convolutional] block becomes a
+# Conv, then a BatchNorm if it survived loading, then its activation.
+function _take_block!(layers, flat, i, blocktype, n)
+    expected = blocktype === :convolutional ? Flux.Conv :
+               blocktype === :maxpool ? MaxPoolLayer :
+               blocktype === :upsample ? Upsample : Reorg
+    i <= lastindex(flat) && flat[i] isa expected ||
+        error("Internal error: cfg block $n ([$blocktype]) does not line up with the model's layers")
+    push!(layers, flat[i])
+    i += 1
+    if blocktype === :convolutional
+        if i <= lastindex(flat) && flat[i] isa Flux.BatchNorm
+            push!(layers, flat[i])
+            i += 1
+        end
+        if i <= lastindex(flat) && flat[i] isa BroadcastActivation
+            push!(layers, PureActivation(flat[i]))
+            i += 1
+        end
+    end
+    return i
+end
+
+"""
+    copy_backbone!(model, trunk) -> Int
+
+Copy the trunk's convolution and batch-norm parameters into `model`, in place,
+and return the number of convolutions copied. `trunk` must be a chain from
+[`backbone`](@ref): its convolutions are paired in order with the model's leading
+convolutions, so anything else risks writing one layer's weights into another.
+
+Only needed when the trunk was trained on a GPU, where `gpu` copied the arrays to
+the device. On CPU the arrays are shared and `Flux.update!` has already written
+through, which makes this a self-copy.
+"""
+function copy_backbone!(yolo::Yolo, trunk)
+    modelconvs = conv_bn_layers(yolo.chain)
+    trunkconvs = conv_bn_layers(trunk)
+    isempty(trunkconvs) && throw(ArgumentError("trunk holds no convolutions"))
+    length(trunkconvs) <= length(modelconvs) ||
+        throw(ArgumentError("trunk has $(length(trunkconvs)) convolutions but the model has only $(length(modelconvs))"))
+    ncopied = 0
+    for ((conv, bn), (tconv, tbn)) in zip(modelconvs, trunkconvs)
+        size(conv.weight) == size(tconv.weight) ||
+            throw(DimensionMismatch("convolution $(ncopied + 1) is $(size(conv.weight)) in the model but $(size(tconv.weight)) in the trunk"))
+        (conv.bias isa AbstractArray) == (tconv.bias isa AbstractArray) ||
+            throw(ArgumentError("convolution $(ncopied + 1) has a bias in one of the model and the trunk but not the other"))
+        copyto!(conv.weight, tconv.weight)
+        conv.bias isa AbstractArray && copyto!(conv.bias, tconv.bias)
+        if bn === nothing
+            tbn === nothing ||
+                throw(ArgumentError("convolution $(ncopied + 1) has batchnorm in the trunk but not in the model, which would discard the trained statistics"))
+        else
+            tbn === nothing && throw(ArgumentError("convolution $(ncopied + 1) has batchnorm in the model but not in the trunk"))
+            copyto!(bn.β, tbn.β)
+            copyto!(bn.γ, tbn.γ)
+            copyto!(bn.μ, tbn.μ)
+            copyto!(bn.σ², tbn.σ²)
+        end
+        ncopied += 1
+    end
+    return ncopied
 end
 
 # Static per-head metadata needed by the loss, precomputed once per training run
@@ -279,7 +414,12 @@ function train!(yolo::Yolo, data::AbstractVector{<:TrainSample};
     isempty(data) && throw(ArgumentError("No training samples provided"))
     heads = train_heads(yolo)
     chain = yolo.chain
-    opt_state = Flux.setup(something(opt, Flux.Adam(lr)), chain)
+    rule = something(opt, Flux.Adam(Float32(lr)))
+    opt_state = Flux.setup(rule, chain)
+    # `adjust!` rebuilds the rule and needs the new learning rate to be exactly
+    # the type the old one was, so warmup scales the rule's own eta rather than
+    # `lr`, which is ignored anyway when `opt` was supplied.
+    base_eta = hasproperty(rule, :eta) ? rule.eta : Float32(lr)
     maybe_gpu(z) = uses_gpu(yolo) ? gpu(z) : z
     box_weight, obj_weight, cls_weight, noobj_weight = Float32.((box_weight, obj_weight, cls_weight, noobj_weight))
     epoch_losses = Float32[]
@@ -301,7 +441,7 @@ function train!(yolo::Yolo, data::AbstractVector{<:TrainSample};
             end
             if warmup_batches > 0 && nseen <= warmup_batches
                 nseen += 1
-                Flux.adjust!(opt_state, Float32(lr) * min(nseen / warmup_batches, 1f0))
+                Flux.adjust!(opt_state, oftype(base_eta, base_eta * min(nseen / warmup_batches, 1)))
             end
             tgts_cpu = build_targets(heads, boxes_batch)
             tgts = [(tobj=maybe_gpu(t.tobj), tx=maybe_gpu(t.tx), ty=maybe_gpu(t.ty),

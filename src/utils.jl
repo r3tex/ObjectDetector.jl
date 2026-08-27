@@ -17,6 +17,9 @@ end
 # whose conv weight arrays are shared with the wrapped copy
 train!(wm::AllocWrappedModel, data; kw...) = train!(wm.model, data; kw...)
 save_weights(wm::AllocWrappedModel, path::AbstractString) = save_weights(wm.model, path)
+backbone(wm::AllocWrappedModel, stop_layer::Integer) = backbone(wm.model, stop_layer)
+copy_backbone!(wm::AllocWrappedModel, trunk) = copy_backbone!(wm.model, trunk)
+# evaluate goes through the wrapper's own call path, so it needs no forwarding
 make_training_batch(wm::AllocWrappedModel, samples; kw...) = make_training_batch(wm.model, samples; kw...)
 
 function gen_class_colors(model::YOLO.Yolo)

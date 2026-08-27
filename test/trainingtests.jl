@@ -1,4 +1,4 @@
-using ObjectDetector: YOLO, TrainSample, train!, save_weights
+using ObjectDetector: YOLO, TrainSample, train!, save_weights, backbone, copy_backbone!  # backbone/copy_backbone! are public but unexported
 import Flux
 using Random: MersenneTwister
 
@@ -181,6 +181,82 @@ using Random: MersenneTwister
         g1 = gs[1].layers[1].layers[1].layers[1].weight
         @test g1 !== nothing
         @test any(!=(0), g1)
+    end
+
+    @testset "warmup learning rate types" begin
+        # `adjust!` rebuilds the optimiser rule and demands the new learning rate
+        # be exactly the type the old one was, so warmup has to match whatever the
+        # rule holds. The default lr is a Float32 and used to throw here.
+        for lr in (1f-3, 1e-3)
+            res = train!(model, data; epochs=1, batchsize=2, lr, warmup_batches=2,
+                         silent=true, rng=MersenneTwister(0))
+            @test isfinite(only(res.losses))
+        end
+        # a user-supplied rule keeps its own eta type, and its own learning rate
+        res = train!(model, data; epochs=1, batchsize=2, opt=Flux.Adam(1e-4),
+                     warmup_batches=2, silent=true, rng=MersenneTwister(0))
+        @test isfinite(only(res.losses))
+    end
+
+    @testset "backbone" begin
+        # blocks 1:15 is darknet's yolov3-tiny.conv.15 split, 9 convolutions;
+        # blocks 1:13 stops at the 1024-channel trunk both branches share
+        trunk = backbone(model, 15)
+        @test count(l -> l isa Flux.Conv, trunk) == 9
+        @test count(l -> l isa Flux.Conv, backbone(model, 13)) == 7
+        x = rand(MersenneTwister(1), Float32, 160, 160, 3, 1)
+        @test size(trunk(x)) == (5, 5, 512, 1)          # 160 / 32
+        @test size(backbone(model, 13)(x)) == (5, 5, 1024, 1)
+
+        # the trunk shares its arrays with the model, so an in-place update
+        # trains the detector too
+        before = copy(YOLO.conv_layers(model.chain)[1].weight)
+        st = Flux.setup(Flux.Adam(1.0f-2), trunk)
+        _, gs = Flux.withgradient(t -> sum(abs2, t(x)), trunk)
+        @test any(!=(0), gs[1].layers[1].weight)
+        Flux.update!(st, trunk, gs[1])
+        @test YOLO.conv_layers(model.chain)[1].weight != before
+
+        # a trunk trained elsewhere (as on a GPU) copies back by value
+        detached = deepcopy(trunk)
+        detached.layers[1].weight .+= 1.0f0
+        @test copy_backbone!(model, detached) == 9
+        @test YOLO.conv_layers(model.chain)[1].weight == detached.layers[1].weight
+
+        # the cut is at the requested block, not at the next convolution:
+        # block 2 is a maxpool, so asking for block 1 must not pick it up
+        @test count(l -> l isa YOLO.MaxPoolLayer, backbone(model, 1)) == 0
+        @test count(l -> l isa YOLO.MaxPoolLayer, backbone(model, 2)) == 1
+
+        @test_throws ArgumentError backbone(model, 0)
+        @test_throws ArgumentError backbone(model, 999)
+        # block 17 is the first [yolo]; a backbone cannot contain one, and
+        # asking for a range that spans it must say so rather than truncate
+        @test_throws ArgumentError backbone(model, 17)
+        @test_throws ArgumentError copy_backbone!(model, Flux.Chain())
+
+        # live batchnorm is what the pre-training workflow uses, and it is the
+        # only path that copies β/γ/μ/σ²
+        bnmodel = YOLO.Yolo(cfgfile, nothing, 1; silent=true, use_gpu=false, disallow_bumper=true,
+                            weights_stop_layer=0, trainable_batchnorm=true, cfgchanges)
+        bntrunk = backbone(bnmodel, 15)
+        @test count(l -> l isa Flux.BatchNorm, bntrunk) == 9
+        detached_bn = deepcopy(bntrunk)
+        for l in detached_bn.layers
+            l isa Flux.BatchNorm || continue
+            l.β .+= 0.5f0; l.γ .+= 0.25f0; l.μ .+= 0.125f0
+        end
+        @test copy_backbone!(bnmodel, detached_bn) == 9
+        modelbns = filter(l -> l isa Flux.BatchNorm, collect(backbone(bnmodel, 15)))
+        trunkbns = filter(l -> l isa Flux.BatchNorm, collect(detached_bn))
+        @test all(((a, b),) -> a.β == b.β && a.γ == b.γ && a.μ == b.μ, zip(modelbns, trunkbns))
+        # a live-batchnorm trunk must not be copied into a folded-batchnorm model
+        @test_throws ArgumentError copy_backbone!(model, bntrunk)
+        # CSP-style backbones route within the trunk and cannot be split off
+        csp = YOLO.Yolo(joinpath(YOLO.models_dir(), "yolov4-tiny.cfg"), nothing, 1;
+                        silent=true, use_gpu=false, disallow_bumper=true, weights_stop_layer=0,
+                        cfgchanges=[(:net, 1, :width, 160), (:net, 1, :height, 160)])
+        @test_throws ArgumentError backbone(csp, 30)
     end
 
     @testset "pretrained transfer with custom classes" begin

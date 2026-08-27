@@ -16,4 +16,5 @@ using ObjectDetector
     include("prepare_image.jl")
     include("maintests.jl")
     include("trainingtests.jl")
+    include("evaltests.jl")
 end

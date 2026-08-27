@@ -719,8 +719,12 @@ mutable struct Yolo <: AbstractModel
             # precalculate the anchor shapes to scale up the detection boxes
             anchor = maybe_gpu(similar(test_batches[1], Float32, w, h, 2, length(anchormask), b))
             for j in eachindex(anchormask)
-                anchor[:, :, 1, j, :] .= anchorvals[1, j] * stridew
-                anchor[:, :, 2, j, :] .= anchorvals[2, j] * strideh
+                # Narrow to Float32 before the broadcast rather than letting the
+                # assignment do it: Metal has no double precision, so a Float64
+                # scalar reaching the kernel fails to compile. Converting the
+                # finished value keeps the result bit-identical on every backend.
+                anchor[:, :, 1, j, :] .= Float32(anchorvals[1, j] * stridew)
+                anchor[:, :, 2, j, :] .= Float32(anchorvals[2, j] * strideh)
             end
 
             out[i][:size] = (w, h, attributes, length(anchormask), b)

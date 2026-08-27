@@ -9,3 +9,11 @@
 *.weights
 Manifest.toml
 *.so
+
+## Docs
+docs/build/
+
+## Example run outputs
+LocalPreferences.toml
+/examples/*/runs/
+/examples/*/imagenette2-*
