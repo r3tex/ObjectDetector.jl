@@ -1,5 +1,7 @@
 # ObjectDetector.jl
 
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://r3tex.github.io/ObjectDetector.jl/dev)
+
 Object detection via YOLO in Julia. YOLO models are loaded directly from Darknet .cfg and .weights files as Flux models. Uses CUDA, if available.
 
 Supported YOLO models are: `v2`, `v2-tiny`, `v3`, `v3-spp`, `v3-tiny`, `v4`, `v4-tiny`, `v4-csp`, `v4-csp-x-swish`, `v4x-mish`, `v4-p5`, `v4-p6` (Scaled-YOLOv4), `v7`, `v7-tiny`, `v7x`
