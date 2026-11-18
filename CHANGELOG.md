@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 - 2026-11-18
+
+Training (#140), backbone splitting and documentation (#141).
 
 ### Training support
 - Add `train!` for training `[yolo]`-output models — classic decode (v3 family, v4,
@@ -17,6 +19,22 @@
 - Add transfer-learning weight loading: `weights_stop_layer` (random-init layers past
   a backbone split, enabling custom class counts via `cfgchanges`) and
   `allow_partial_weights` (truncated `.conv.XX` backbone files).
+- Add `ObjectDetector.backbone(model, stop_layer)`, which returns a model's trunk as a
+  `Flux.Chain` for classification pre-training, and `ObjectDetector.copy_backbone!` to put a
+  trained one back. `stop_layer` counts cfg blocks, as `weights_stop_layer` does. Not
+  exported, as Metalhead.jl exports `backbone`.
+- Add `ObjectDetector.evaluate`, which scores detections against ground truth as COCO does
+  (`mAP`, `mAP50`, `mAP75`, per-class AP), returning a `DetectionMetrics`.
+
+### Fixes
+- Model construction no longer fails on Metal: anchors were filled from `Float64` values,
+  which Metal cannot compile.
+- `warmup_batches > 0` no longer throws with a `Float32` learning rate, and warmup now ramps
+  towards the optimiser's own rate when `opt` is given.
+
+### Documentation
+- A Documenter site, with guides to the pretrained models, training and acceleration, and
+  tutorials for pre-training a backbone on ImageNet and training a detector on COCO.
 
 ## v1.2.0 - 2026-08-07
 
